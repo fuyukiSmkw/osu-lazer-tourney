@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup Label="Project">
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyTitle>osu.Game.Rulesets.LazerTourney</AssemblyTitle>
+    <OutputType>Library</OutputType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <RootNamespace>osu.Game.Rulesets.LazerTourney</RootNamespace>
+    <Nullable>annotations</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../osu/osu.Game/osu.Game.csproj" />
+    <ProjectReference Include="../../osu/osu.Game.Tournament/osu.Game.Tournament.csproj" />
+  </ItemGroup>
+</Project>
