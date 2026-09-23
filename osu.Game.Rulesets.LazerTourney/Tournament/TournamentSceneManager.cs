@@ -44,7 +44,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private Container screens = null!;
         private TourneyVideo video = null!;
 
-        public const int CONTROL_AREA_WIDTH = 200;
+        public const int CONTROL_AREA_WIDTH = 150;
         public const int CONTROL_PANEL_WIDTH = 250;
 
         public const int STREAM_AREA_WIDTH = 1366;
@@ -78,6 +78,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         [Cached]
         private readonly ChatTimerService chatTimerService = new ChatTimerService();
+
+        /// <summary>
+        /// Match-start countdown tick sounds. Hosted here so they play exactly once
+        /// no matter which screen is shown (the tournament screens don't host
+        /// <c>MultiplayerReadyButton</c>, which plays them officially).
+        /// </summary>
+        [Cached]
+        private readonly MatchStartCountdownSounds countdownSounds = new MatchStartCountdownSounds();
 
         private Container chatContainer = null!;
         private FillFlowContainer buttons = null!;
@@ -194,6 +202,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 musicController,
                 spectateSession,
                 chatTimerService,
+                countdownSounds,
             };
 
             foreach (var drawable in screens)

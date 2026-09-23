@@ -4,6 +4,7 @@
 using System.Linq;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
@@ -60,8 +61,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             Width = TournamentSceneManager.CONTROL_PANEL_WIDTH;
             Anchor = Anchor.TopRight;
 
-            InternalChildren = new Drawable[]
+            // Popovers opened from panel buttons (e.g. the countdown button) are hosted
+            // by this container, keeping them inside the panel and off the stream area.
+            // Sizing is mirrored to the inner content, so layout is unchanged.
+            InternalChild = new PopoverContainer
             {
+                RelativeSizeAxes = Axes.Both,
+                Children = new Drawable[]
+                {
                 new Box
                 {
                     RelativeSizeAxes = Axes.Both,
@@ -132,6 +139,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                             },
                         },
                     },
+                },
                 },
             };
         }
