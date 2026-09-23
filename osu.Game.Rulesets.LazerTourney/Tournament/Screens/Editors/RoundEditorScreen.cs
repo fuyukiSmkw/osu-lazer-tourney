@@ -11,8 +11,10 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Beatmaps;
+using osu.Game.Beatmaps.Drawables;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
+using osu.Game.Online;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests;
 using osu.Game.Online.API.Requests.Responses;
@@ -222,6 +224,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     private readonly Bindable<string> mods = new Bindable<string>(string.Empty);
 
                     private readonly Container drawableContainer;
+                    private readonly Container downloadButtonContainer;
                     private readonly RoundBeatmapModEditor modEditor;
                     private readonly OsuSpriteText freestyleBadge;
                     private readonly ModDisplay requiredInfoDisplay;
@@ -229,6 +232,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     private readonly OsuSpriteText statsText;
 
                     private CancellationTokenSource? difficultyCts;
+
+                    private IBeatmapSetInfo? apiBeatmapSet;
 
                     public RoundBeatmapRow(TournamentRound team, RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
                     {
@@ -252,7 +257,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             new FillFlowContainer
                             {
                                 Margin = new MarginPadding(5),
-                                Padding = new MarginPadding { Right = 160 },
+                                Padding = new MarginPadding { Right = 215 },
                                 Spacing = new Vector2(5),
                                 Direction = FillDirection.Vertical,
                                 RelativeSizeAxes = Axes.X,
@@ -337,18 +342,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                     },
                                 }
                             },
-                            new DangerousSettingsButton
+                            new FillFlowContainer
                             {
                                 Anchor = Anchor.CentreRight,
                                 Origin = Anchor.CentreRight,
-                                RelativeSizeAxes = Axes.None,
-                                Width = 150,
-                                Text = "Delete Beatmap",
-                                Action = () =>
+                                AutoSizeAxes = Axes.Both,
+                                Direction = FillDirection.Horizontal,
+                                Spacing = new Vector2(5),
+                                Children = new Drawable[]
                                 {
-                                    Expire();
-                                    team.Beatmaps.Remove(beatmap);
-                                },
+                                    downloadButtonContainer = new Container
+                                    {
+                                        Anchor = Anchor.Centre,
+                                        Origin = Anchor.Centre,
+                                        AutoSizeAxes = Axes.Both,
+                                    },
+                                    new DangerousSettingsButton
+                                    {
+                                        Anchor = Anchor.Centre,
+                                        Origin = Anchor.Centre,
+                                        RelativeSizeAxes = Axes.None,
+                                        Width = 150,
+                                        Text = "Delete Beatmap",
+                                        Action = () =>
+                                        {
+                                            Expire();
+                                            team.Beatmaps.Remove(beatmap);
+                                        },
+                                    },
+                                }
                             }
                         };
 
@@ -372,11 +394,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             if (id.NewValue != id.OldValue)
                                 Model.Beatmap = null;
 
-                            if (Model.Beatmap != null)
+                            apiBeatmapSet = null;
+
+                            // Downloaded: show stored metadata, no fetch and no download button.
+                            if (Model.Beatmap != null && beatmaps.QueryBeatmap(b => b.OnlineID == Model.ID) != null)
                             {
                                 updatePanel();
                                 refreshInfo();
                                 return;
+                            }
+
+                            if (Model.Beatmap != null)
+                            {
+                                // Pre-populated metadata but not downloaded locally: show it right away.
+                                // The fetch below refreshes the metadata and provides set info for the download button.
+                                updatePanel();
+                                refreshInfo();
                             }
 
                             var req = new GetBeatmapRequest(new APIBeatmap { OnlineID = Model.ID });
@@ -384,6 +417,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             req.Success += res =>
                             {
                                 Model.Beatmap = new TournamentBeatmap(res);
+                                apiBeatmapSet = res.BeatmapSet ?? new APIBeatmapSet { OnlineID = res.OnlineBeatmapSetID };
                                 updatePanel();
                                 refreshInfo();
                             };
@@ -391,6 +425,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             req.Failure += _ =>
                             {
                                 Model.Beatmap = null;
+                                apiBeatmapSet = null;
                                 updatePanel();
                                 refreshInfo();
                             };
@@ -405,17 +440,84 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     private void updatePanel() => Schedule(() =>
                     {
                         drawableContainer.Clear();
+                        downloadButtonContainer.Clear();
 
-                        if (Model.Beatmap != null)
+                        if (Model.Beatmap == null)
+                            return;
+
+                        drawableContainer.Child = new TournamentBeatmapPanel(Model.Beatmap, Model.Mods)
                         {
-                            drawableContainer.Child = new TournamentBeatmapPanel(Model.Beatmap, Model.Mods)
-                            {
-                                Anchor = Anchor.CentreLeft,
-                                Origin = Anchor.CentreLeft,
-                                Width = 300
-                            };
-                        }
+                            Anchor = Anchor.CentreLeft,
+                            Origin = Anchor.CentreLeft,
+                            Width = 300
+                        };
+
+                        // On-demand download button: only when the map is missing locally
+                        // and the set info (from the metadata fetch above) is known.
+                        if (apiBeatmapSet != null && beatmaps.QueryBeatmap(b => b.OnlineID == Model.ID) == null)
+                            downloadButtonContainer.Child = new RowDownloadButton(apiBeatmapSet, Model.ID);
                     });
+
+                    /// <summary>
+                    /// Download button that hides itself once the beatmap is available locally.
+                    /// Mirrors <c>DrawableRoomPlaylistItem.PlaylistDownloadButton</c>.
+                    /// </summary>
+                    private sealed partial class RowDownloadButton : BeatmapDownloadButton
+                    {
+                        private readonly int onlineId;
+
+                        [Resolved]
+                        private BeatmapManager beatmapManager { get; set; } = null!;
+
+                        // required for download tracking, as this button hides itself. can probably be removed with a bit of consideration.
+                        public override bool IsPresent => true;
+
+                        private const float width = 50;
+
+                        public RowDownloadButton(IBeatmapSetInfo beatmapSet, int onlineId)
+                            : base(beatmapSet)
+                        {
+                            this.onlineId = onlineId;
+
+                            Size = new Vector2(width, 30);
+                            Alpha = 0;
+                        }
+
+                        protected override void LoadComplete()
+                        {
+                            State.BindValueChanged(stateChanged, true);
+
+                            // base implementation calls FinishTransforms, so should be run after the above state update.
+                            base.LoadComplete();
+                        }
+
+                        private void stateChanged(ValueChangedEvent<DownloadState> state)
+                        {
+                            switch (state.NewValue)
+                            {
+                                case DownloadState.Unknown:
+                                    // Ignore initial state to ensure the button doesn't briefly appear.
+                                    break;
+
+                                case DownloadState.LocallyAvailable:
+                                    // Perform a local query of the beatmap by online ID, and reset the state if not matching.
+                                    if (beatmapManager.QueryBeatmap(b => b.OnlineID == onlineId) == null)
+                                        State.Value = DownloadState.NotDownloaded;
+                                    else
+                                    {
+                                        this.FadeTo(0, 500)
+                                            .ResizeWidthTo(0, 500, Easing.OutQuint);
+                                    }
+
+                                    break;
+
+                                default:
+                                    this.ResizeWidthTo(width, 500, Easing.OutQuint)
+                                        .FadeTo(1, 500);
+                                    break;
+                            }
+                        }
+                    }
 
                     /// <summary>
                     /// Refreshes the gameplay-mod displays and recomputes adjusted stats.
