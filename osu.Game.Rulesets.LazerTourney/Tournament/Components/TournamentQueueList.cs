@@ -4,6 +4,8 @@
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Extensions.ObjectExtensions;
+using osu.Framework.Graphics;
+using osu.Framework.Graphics.Containers;
 using osu.Game.Online.API;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Rooms;
@@ -33,6 +35,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private bool firstPopulation = true;
 
         protected override DrawableRoomPlaylistItem CreateDrawablePlaylistItem(PlaylistItem item) => new NoEditQueuePlaylistItem(item);
+
+        // Mirrors DrawableRoomPlaylist's factory, but non-scrolling: the list is exactly content-sized,
+        // so wheel/drag gestures pass through to the outer panel (see NonScrollingOsuScrollContainer).
+        protected override ScrollContainer<Drawable> CreateScrollContainer() => new NonScrollingOsuScrollContainer
+        {
+            ScrollbarVisible = false,
+        };
 
         protected override void LoadComplete()
         {
