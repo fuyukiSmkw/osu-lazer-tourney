@@ -189,6 +189,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         protected override void LoadComplete()
         {
             base.LoadComplete();
+            startButton.Margin = new MarginPadding(0); // i have OCD
             client.RoomUpdated += updateStartButton;
             updateStartButton();
         }
