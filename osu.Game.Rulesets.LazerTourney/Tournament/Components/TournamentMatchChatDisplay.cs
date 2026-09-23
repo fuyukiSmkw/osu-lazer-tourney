@@ -1,7 +1,6 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-using System;
 using System.ComponentModel;
 using System.Linq;
 using osu.Framework.Allocation;
@@ -120,8 +119,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         protected override ChatLine? CreateMessage(Message message)
         {
-            if (message.Content.StartsWith("!mp", StringComparison.Ordinal))
-                return null;
+            // not stable anymore
+            // if (message.Content.StartsWith("!mp", StringComparison.Ordinal)) return null;
 
             return new MatchMessage(message, ladderInfo);
         }
