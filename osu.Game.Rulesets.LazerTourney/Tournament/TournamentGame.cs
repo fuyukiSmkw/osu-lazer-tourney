@@ -35,6 +35,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private SaveChangesOverlay saveChangesOverlay = null!;
 
+        private GameHost? host;
+
+        public override void ExitTournament()
+        {
+            // Restore OS cursor hiding (set by OsuGame at startup); lazer cursor
+            // visibility is restored automatically via CursorVisible.
+            if (host?.Window != null)
+                host.Window.CursorState |= CursorState.Hidden;
+
+            base.ExitTournament();
+        }
+
         [BackgroundDependencyLoader]
         private void load(FrameworkConfigManager frameworkConfig, GameHost host)
         {
@@ -55,6 +67,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             var mouseHandler = host.AvailableInputHandlers.OfType<MouseHandler>().FirstOrDefault();
 
             mouseHandler?.UseRelativeMode.Value = false;
+
+            // Disabling relative mode alone doesn't show the OS cursor: OsuGame hides it
+            // at startup via CursorState.Hidden (lazer draws its own everywhere).
+            // Clear the flag on enter; ExitTournament restores it.
+            this.host = host;
+
+            if (host.Window != null)
+                host.Window.CursorState &= ~CursorState.Hidden;
 
             loadingSpinner.Show();
 
