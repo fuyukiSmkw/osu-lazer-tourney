@@ -12,6 +12,7 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Scoring;
 using osu.Game.Screens;
@@ -150,40 +151,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         {
             base.Dispose(isDisposing);
             loadedTrack?.Dispose();
-        }
-
-        /// <summary>
-        /// Isolates each player instance from the game-wide ruleset/beatmap/mods (to allow for different players having different settings).
-        /// </summary>
-        private partial class PlayerIsolationContainer : Container
-        {
-            [Cached]
-            [Cached(typeof(IBindable<RulesetInfo>))]
-            private readonly Bindable<RulesetInfo> ruleset = new Bindable<RulesetInfo>();
-
-            [Cached]
-            [Cached(typeof(IBindable<WorkingBeatmap>))]
-            private readonly Bindable<WorkingBeatmap> beatmap = new Bindable<WorkingBeatmap>();
-
-            [Cached]
-            [Cached(typeof(IBindable<IReadOnlyList<Mod>>))]
-            private readonly Bindable<IReadOnlyList<Mod>> mods = new Bindable<IReadOnlyList<Mod>>();
-
-            public PlayerIsolationContainer(WorkingBeatmap beatmap, RulesetInfo ruleset, IReadOnlyList<Mod> mods)
-            {
-                this.beatmap.Value = beatmap;
-                this.ruleset.Value = ruleset;
-                this.mods.Value = mods;
-            }
-
-            protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
-            {
-                var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
-                dependencies.CacheAs(ruleset.BeginLease(false));
-                dependencies.CacheAs(beatmap.BeginLease(false));
-                dependencies.CacheAs(mods.BeginLease(false));
-                return dependencies;
-            }
         }
     }
 }

@@ -65,10 +65,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// <summary>
         /// Exit the tournament client. Called from the setup screen's exit button.
         /// </summary>
-        public void ExitTournament()
+        public virtual void ExitTournament()
         {
             this.Exit();
-            // TODO: cursor, toolbar, etc.
         }
 
         protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
@@ -84,6 +83,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private TournamentSpriteText initialisationText = null!;
 
         public override bool AllowUserExit => false;
+
+        /// <summary>
+        /// Hides lazer's cursor while the tournament client is active; the system cursor
+        /// is used instead (relative mode is already disabled in <see cref="TournamentGame"/>).
+        /// Restored automatically on exit: <c>OsuGame</c> derives global cursor visibility
+        /// from the current screen's <c>CursorVisible</c> every frame.
+        /// </summary>
+        public override bool CursorVisible => false;
 
         [BackgroundDependencyLoader]
         private void load(Storage baseStorage, BeatmapLookupCache beatmapCache)

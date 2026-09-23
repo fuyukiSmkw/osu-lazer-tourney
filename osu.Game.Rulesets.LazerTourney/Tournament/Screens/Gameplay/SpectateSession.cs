@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
@@ -63,6 +64,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private BeatmapManager beatmaps { get; set; } = null!;
 
         [Resolved]
+        private BeatmapLookupCache beatmapLookupCache { get; set; } = null!;
+
+        [Resolved]
+        private BeatmapModelDownloader beatmapDownloader { get; set; } = null!;
+
+        [Resolved]
         private RealmAccess realm { get; set; } = null!;
 
         [Resolved]
@@ -104,6 +111,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private SkinnableSound breakSound = null!;
         private Bindable<bool> alwaysPlayFirstBreak = null!;
+        private Bindable<bool> automaticallyDownload = null!;
+        private CancellationTokenSource? downloadCheckCancellation;
+        private int? lastDownloadCheckedBeatmapId;
         private IDisposable? realmSubscription;
         private IDisposable? userWatchToken;
 
@@ -162,6 +172,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             AddInternal(breakSound = new SkinnableSound(new SampleInfo("Gameplay/combobreak")));
             AddInternal(beatmapAvailabilityTracker = new MultiplayerBeatmapAvailabilityTracker());
             alwaysPlayFirstBreak = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
+            automaticallyDownload = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps);
+            automaticallyDownload.BindValueChanged(_ => Scheduler.AddOnce(checkForAutomaticDownload));
         }
 
         protected override void LoadComplete()
@@ -400,12 +412,68 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             {
                 hadRoom = true;
                 Assign(force: true);
+                checkForAutomaticDownload();
                 return;
             }
 
             hadRoom = true;
             Assign();
+            checkForAutomaticDownload();
         });
+
+        #region Automatic download
+
+        /// <summary>
+        /// Downloads the room's current item when missing locally, so spectating never
+        /// stalls on an undownloaded map no matter which screen is shown.
+        /// Mirrors <c>MultiplayerSpectateButton.checkForAutomaticDownload</c> (also hosted by
+        /// RoomScreen): same setting gate, same spectating gate, same per-beatmap dedupe.
+        /// Concurrent duplicates are still safe: the model downloader
+        /// ignores a set that is already downloading.
+        /// </summary>
+        private void checkForAutomaticDownload()
+        {
+            var room = multiplayerClient.Room;
+
+            if (room == null)
+                return;
+
+            if (!automaticallyDownload.Value)
+                return;
+
+            // Mirrors official: only auto-download while spectating.
+            if (multiplayerClient.LocalUser?.State != MultiplayerUserState.Spectating)
+                return;
+
+            MultiplayerPlaylistItem item = room.CurrentPlaylistItem;
+
+            // This runs on every room update; only fire once per beatmap.
+            if (lastDownloadCheckedBeatmapId == item.BeatmapID)
+                return;
+
+            lastDownloadCheckedBeatmapId = item.BeatmapID;
+
+            downloadCheckCancellation?.Cancel();
+
+            // In a perfect world we'd use BeatmapAvailability, but there's no event-driven flow for when a selection changes.
+            // ie. if selection changes from "not downloaded" to another "not downloaded" we wouldn't get a value changed raised.
+            beatmapLookupCache
+                .GetBeatmapAsync(item.BeatmapID, (downloadCheckCancellation = new CancellationTokenSource()).Token)
+                .ContinueWith(resolved => Schedule(() =>
+                {
+                    var beatmapSet = resolved.GetResultSafely()?.BeatmapSet;
+
+                    if (beatmapSet == null)
+                        return;
+
+                    if (beatmaps.IsAvailableLocally(new APIBeatmap { OnlineID = item.BeatmapID }))
+                        return;
+
+                    beatmapDownloader.Download(beatmapSet);
+                }));
+        }
+
+        #endregion
 
         private void onLoadRequested() => Schedule(() =>
         {

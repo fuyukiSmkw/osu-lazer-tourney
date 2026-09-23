@@ -24,6 +24,8 @@ namespace osu.Game.Rulesets.LazerTourney
     {
         public override string Description => "lazer!tourney";
 
+        public static string Version => "2026.924.0";
+
         public override DrawableRuleset CreateDrawableRulesetWith(IBeatmap beatmap, IReadOnlyList<Mod> mods = null) =>
             new DrawableLazerTourneyRuleset(this, beatmap, mods);
 

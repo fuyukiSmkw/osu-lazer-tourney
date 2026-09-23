@@ -60,6 +60,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             Masking = true;
 
+            // Online covers only work when the beatmap itself carries online set info
+            // (e.g. TournamentBeatmap from the mappool). Local beatmaps (room downloads,
+            // globally playing beatmaps, scores) need the local background sprite instead:
+            // the cast below yields null for them and the online cover stays empty.
+            // NOTE: TournamentBeatmap must stay on the online branch: its IBeatmapInfo.BeatmapSet
+            // getter throws, which the local component below would touch.
+            Drawable cover = Beatmap is IBeatmapSetOnlineInfo onlineInfo
+                ? new NoUnloadBeatmapSetCover
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Colour = OsuColour.Gray(0.5f),
+                    OnlineInfo = onlineInfo,
+                }
+                : new NoUnloadBeatmapBackground
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Colour = OsuColour.Gray(0.5f),
+                    Beatmap = { Value = Beatmap },
+                };
+
             AddRangeInternal(new Drawable[]
             {
                 new Box
@@ -67,12 +87,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     RelativeSizeAxes = Axes.Both,
                     Colour = Color4.Black,
                 },
-                new NoUnloadBeatmapSetCover
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Colour = OsuColour.Gray(0.5f),
-                    OnlineInfo = (Beatmap as IBeatmapSetOnlineInfo),
-                },
+                cover,
                 new FillFlowContainer
                 {
                     AutoSizeAxes = Axes.Both,
@@ -253,6 +268,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             protected override double LoadDelay => 0;
 
             // Use DelayedLoadWrapper to avoid content unloading when switching away to another screen.
+            protected override DelayedLoadWrapper CreateDelayedLoadWrapper(Func<Drawable> createContentFunc, double timeBeforeLoad)
+                => new DelayedLoadWrapper(createContentFunc(), timeBeforeLoad);
+        }
+
+        private partial class NoUnloadBeatmapBackground : UpdateableBeatmapBackgroundSprite
+        {
+            public NoUnloadBeatmapBackground()
+            {
+                // Same stream rationale as above: load immediately, ...
+                BackgroundLoadDelay = 0;
+            }
+
+            // ... and never unload when switching away to another screen.
             protected override DelayedLoadWrapper CreateDelayedLoadWrapper(Func<Drawable> createContentFunc, double timeBeforeLoad)
                 => new DelayedLoadWrapper(createContentFunc(), timeBeforeLoad);
         }

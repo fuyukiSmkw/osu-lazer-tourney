@@ -3,10 +3,13 @@
 
 using System.Linq;
 using System.Threading.Tasks;
+using Humanizer;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
+using osu.Game.Online.API.Requests.Responses;
+using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Multiplayer.MatchTypes.TeamVersus;
 using osu.Game.Online.Rooms;
@@ -92,6 +95,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         [Resolved]
         private MultiplayerClient multiplayerClient { get; set; } = null!;
 
+        [Resolved]
+        private ChannelManager? channelManager { get; set; }
+
         /// <summary>
         /// The underlying multiplayer client. Exposed for screens that need richer room access.
         /// </summary>
@@ -122,6 +128,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         {
             multiplayerClient.RoomUpdated += onRoomUpdated;
             multiplayerClient.UserStateChanged += onUserStateChanged;
+            multiplayerClient.MatchEvent += onMatchEvent;
             onRoomUpdated();
         }
 
@@ -226,6 +233,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                    ? teamState.TeamID
                    : null;
 
+        /// <summary>
+        /// Posts server match events that have a chat representation (e.g. /roll results).
+        /// Mirrors <c>MultiplayerMatchSubScreen.onMatchEvent</c>: /roll is sent as a
+        /// <c>RollRequest</c> and its result comes back as a <c>RollEvent</c> here, not as a
+        /// chat message. Without this subscription the result is silently dropped and /roll
+        /// appears to do nothing. The message is added to the shared room channel, so it shows
+        /// in RoomScreen, the tournament overlay and every synced send box's channel.
+        /// </summary>
+        private void onMatchEvent(MatchServerEvent matchEvent)
+        {
+            switch (matchEvent)
+            {
+                case RollEvent rollEvent:
+                {
+                    var room = multiplayerClient.Room;
+
+                    if (room == null)
+                        return;
+
+                    var user = room.Users.SingleOrDefault(u => u.UserID == rollEvent.UserID)?.User ?? APIUser.UnknownUser(rollEvent.UserID);
+                    string text = $"{user.Username} rolled {"point".ToQuantity(rollEvent.Result)} out of {rollEvent.Max}.";
+
+                    var channel = channelManager?.JoinChannel(new Channel { Id = room.ChannelID, Type = ChannelType.Multiplayer, Name = $"#lazermp_{room.RoomID}" });
+                    channel?.AddNewMessages(new InfoMessage(text));
+                    break;
+                }
+            }
+        }
+
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
@@ -234,6 +270,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             {
                 multiplayerClient.RoomUpdated -= onRoomUpdated;
                 multiplayerClient.UserStateChanged -= onUserStateChanged;
+                multiplayerClient.MatchEvent -= onMatchEvent;
             }
         }
     }

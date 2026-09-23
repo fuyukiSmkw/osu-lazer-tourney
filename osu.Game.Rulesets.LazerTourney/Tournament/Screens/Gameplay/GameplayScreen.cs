@@ -89,7 +89,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     Anchor = Anchor.BottomCentre,
                     Origin = Anchor.TopCentre,
                 },
-                new ControlPanel
+                new SyncedControlPanel
                 {
                     Children = new Drawable[]
                     {

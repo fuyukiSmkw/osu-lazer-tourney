@@ -289,221 +289,227 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
                     // Fixed page mirroring MultiplayerMatchSubScreen: room panel on top,
                     // participants | queue | chat side by side below, footer at the bottom.
                     // The page itself never scrolls; only the three columns scroll internally.
-                    Child = new GridContainer
+                    // Hosted in a PopoverContainer so popover buttons in the footer
+                    // (e.g. the countdown button) have a host.
+                    Child = new PopoverContainer
                     {
                         RelativeSizeAxes = Axes.Both,
-                        Padding = new MarginPadding(10),
-                        RowDimensions = new[]
+                        Child = new GridContainer
                         {
-                            new Dimension(GridSizeMode.AutoSize),
-                            new Dimension(GridSizeMode.AutoSize),
-                            new Dimension(),
-                            new Dimension(GridSizeMode.Absolute, 10),
-                            new Dimension(GridSizeMode.AutoSize),
-                        },
-                        Content = new[]
-                        {
-                            new Drawable[]
+                            RelativeSizeAxes = Axes.Both,
+                            Padding = new MarginPadding(10),
+                            RowDimensions = new[]
                             {
-                                roomPanelContainer = new Container
-                                {
-                                    RelativeSizeAxes = Axes.X,
-                                    AutoSizeAxes = Axes.Y,
-                                },
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(),
+                                new Dimension(GridSizeMode.Absolute, 10),
+                                new Dimension(GridSizeMode.AutoSize),
                             },
-                            new Drawable[]
+                            Content = new[]
                             {
-                                new FillFlowContainer
+                                new Drawable[]
                                 {
-                                    RelativeSizeAxes = Axes.X,
-                                    AutoSizeAxes = Axes.Y,
-                                    Direction = FillDirection.Vertical,
-                                    Spacing = new Vector2(2),
-                                    Children = new Drawable[]
+                                    roomPanelContainer = new Container
                                     {
-                                        spectateStatus = new OsuSpriteText
-                                        {
-                                            Font = OsuFont.GetFont(size: 16),
-                                        },
-                                        teamInfoText = new OsuSpriteText
-                                        {
-                                            Font = OsuFont.GetFont(size: 14),
-                                        },
+                                        RelativeSizeAxes = Axes.X,
+                                        AutoSizeAxes = Axes.Y,
                                     },
                                 },
-                            },
-                            new Drawable[]
-                            {
-                                new GridContainer
+                                new Drawable[]
                                 {
-                                    RelativeSizeAxes = Axes.Both,
-                                    ColumnDimensions = new[]
+                                    new FillFlowContainer
                                     {
-                                        new Dimension(),
-                                        new Dimension(GridSizeMode.Absolute, 10),
-                                        new Dimension(),
-                                        new Dimension(GridSizeMode.Absolute, 10),
-                                        new Dimension(),
-                                    },
-                                    Content = new[]
-                                    {
-                                        new Drawable[]
+                                        RelativeSizeAxes = Axes.X,
+                                        AutoSizeAxes = Axes.Y,
+                                        Direction = FillDirection.Vertical,
+                                        Spacing = new Vector2(2),
+                                        Children = new Drawable[]
                                         {
-                                            new GridContainer
+                                            spectateStatus = new OsuSpriteText
                                             {
-                                                RelativeSizeAxes = Axes.Both,
-                                                RowDimensions = new[]
-                                                {
-                                                    new Dimension(GridSizeMode.AutoSize),
-                                                    new Dimension(),
-                                                },
-                                                Content = new[]
-                                                {
-                                                    new Drawable[] { new ParticipantsListHeader() },
-                                                    new Drawable[]
-                                                    {
-                                                        participantsList = new ParticipantsList
-                                                        {
-                                                            RelativeSizeAxes = Axes.Both,
-                                                        },
-                                                    },
-                                                },
+                                                Font = OsuFont.GetFont(size: 16),
                                             },
-                                            null,
-                                            new GridContainer
+                                            teamInfoText = new OsuSpriteText
                                             {
-                                                RelativeSizeAxes = Axes.Both,
-                                                RowDimensions = new[]
-                                                {
-                                                    new Dimension(GridSizeMode.AutoSize),
-                                                    new Dimension(),
-                                                    new Dimension(GridSizeMode.AutoSize),
-                                                    new Dimension(GridSizeMode.AutoSize),
-                                                },
-                                                Content = new[]
-                                                {
-                                                    new Drawable[]
-                                                    {
-                                                        new OsuSpriteText
-                                                        {
-                                                            Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
-                                                            Text = "QUEUE",
-                                                        },
-                                                    },
-                                                    new Drawable[]
-                                                    {
-                                                        multiplayerPlaylist = new MultiplayerPlaylist
-                                                        {
-                                                            RelativeSizeAxes = Axes.Both,
-                                                            RequestEdit = onPlaylistEditRequested,
-                                                        },
-                                                    },
-                                                    new Drawable[]
-                                                    {
-                                                        new TourneyButton
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            Margin = new MarginPadding { Top = 8 },
-                                                            Text = "Add current beatmap",
-                                                            Action = addCurrentBeatmapToRoom,
-                                                        },
-                                                    },
-                                                    new Drawable[]
-                                                    {
-                                                        editRoomButton = new TourneyButton
-                                                        {
-                                                            RelativeSizeAxes = Axes.X,
-                                                            Margin = new MarginPadding { Top = 8 },
-                                                            Text = "Edit room",
-                                                            Action = editRoomSettings,
-                                                        },
-                                                    },
-                                                },
-                                            },
-                                            null,
-                                            new GridContainer
-                                            {
-                                                RelativeSizeAxes = Axes.Both,
-                                                RowDimensions = new[]
-                                                {
-                                                    new Dimension(GridSizeMode.AutoSize),
-                                                    new Dimension(),
-                                                },
-                                                Content = new[]
-                                                {
-                                                    new Drawable[]
-                                                    {
-                                                        new OsuSpriteText
-                                                        {
-                                                            Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
-                                                            Text = "CHAT",
-                                                        },
-                                                    },
-                                                    new Drawable[]
-                                                    {
-                                                        chatContainer = new Container
-                                                        {
-                                                            RelativeSizeAxes = Axes.Both,
-                                                        },
-                                                    },
-                                                },
+                                                Font = OsuFont.GetFont(size: 14),
                                             },
                                         },
                                     },
                                 },
-                            },
-                            null,
-                            new Drawable[]
-                            {
-                                new GridContainer
+                                new Drawable[]
                                 {
-                                    RelativeSizeAxes = Axes.X,
-                                    Height = 50,
-                                    ColumnDimensions = new[]
+                                    new GridContainer
                                     {
-                                        new Dimension(GridSizeMode.Absolute, 140),
-                                        new Dimension(GridSizeMode.Absolute, 10),
-                                        new Dimension(GridSizeMode.Absolute, 200),
-                                        new Dimension(GridSizeMode.Absolute, 10),
-                                        new Dimension(),
-                                        new Dimension(GridSizeMode.Absolute, 10),
-                                        new Dimension(GridSizeMode.Absolute, 200),
-                                    },
-                                    Content = new[]
-                                    {
-                                        new Drawable[]
+                                        RelativeSizeAxes = Axes.Both,
+                                        ColumnDimensions = new[]
                                         {
-                                            new TourneyButton
+                                            new Dimension(),
+                                            new Dimension(GridSizeMode.Absolute, 10),
+                                            new Dimension(),
+                                            new Dimension(GridSizeMode.Absolute, 10),
+                                            new Dimension(),
+                                        },
+                                        Content = new[]
+                                        {
+                                            new Drawable[]
                                             {
-                                                RelativeSizeAxes = Axes.None,
-                                                Size = new Vector2(140, 50),
-                                                Text = "Back",
-                                                Action = goBackToSetup,
+                                                new GridContainer
+                                                {
+                                                    RelativeSizeAxes = Axes.Both,
+                                                    RowDimensions = new[]
+                                                    {
+                                                        new Dimension(GridSizeMode.AutoSize),
+                                                        new Dimension(),
+                                                    },
+                                                    Content = new[]
+                                                    {
+                                                        new Drawable[] { new ParticipantsListHeader() },
+                                                        new Drawable[]
+                                                        {
+                                                            participantsList = new ParticipantsList
+                                                            {
+                                                                RelativeSizeAxes = Axes.Both,
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                null,
+                                                new GridContainer
+                                                {
+                                                    RelativeSizeAxes = Axes.Both,
+                                                    RowDimensions = new[]
+                                                    {
+                                                        new Dimension(GridSizeMode.AutoSize),
+                                                        new Dimension(),
+                                                        new Dimension(GridSizeMode.AutoSize),
+                                                        new Dimension(GridSizeMode.AutoSize),
+                                                    },
+                                                    Content = new[]
+                                                    {
+                                                        new Drawable[]
+                                                        {
+                                                            new OsuSpriteText
+                                                            {
+                                                                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
+                                                                Text = "QUEUE",
+                                                            },
+                                                        },
+                                                        new Drawable[]
+                                                        {
+                                                            multiplayerPlaylist = new MultiplayerPlaylist
+                                                            {
+                                                                RelativeSizeAxes = Axes.Both,
+                                                                RequestEdit = onPlaylistEditRequested,
+                                                            },
+                                                        },
+                                                        new Drawable[]
+                                                        {
+                                                            new TourneyButton
+                                                            {
+                                                                RelativeSizeAxes = Axes.X,
+                                                                Margin = new MarginPadding { Top = 8 },
+                                                                Text = "Add current beatmap",
+                                                                Action = addCurrentBeatmapToRoom,
+                                                            },
+                                                        },
+                                                        new Drawable[]
+                                                        {
+                                                            editRoomButton = new TourneyButton
+                                                            {
+                                                                RelativeSizeAxes = Axes.X,
+                                                                Margin = new MarginPadding { Top = 8 },
+                                                                Text = "Edit room",
+                                                                Action = editRoomSettings,
+                                                            },
+                                                        },
+                                                    },
+                                                },
+                                                null,
+                                                new GridContainer
+                                                {
+                                                    RelativeSizeAxes = Axes.Both,
+                                                    RowDimensions = new[]
+                                                    {
+                                                        new Dimension(GridSizeMode.AutoSize),
+                                                        new Dimension(),
+                                                    },
+                                                    Content = new[]
+                                                    {
+                                                        new Drawable[]
+                                                        {
+                                                            new OsuSpriteText
+                                                            {
+                                                                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
+                                                                Text = "CHAT",
+                                                            },
+                                                        },
+                                                        new Drawable[]
+                                                        {
+                                                            chatContainer = new Container
+                                                            {
+                                                                RelativeSizeAxes = Axes.Both,
+                                                            },
+                                                        },
+                                                    },
+                                                },
                                             },
-                                            null,
-                                            new MultiplayerSpectateButton
+                                        },
+                                    },
+                                },
+                                null,
+                                new Drawable[]
+                                {
+                                    new GridContainer
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Height = 50,
+                                        ColumnDimensions = new[]
+                                        {
+                                            new Dimension(GridSizeMode.Absolute, 140),
+                                            new Dimension(GridSizeMode.Absolute, 10),
+                                            new Dimension(GridSizeMode.Absolute, 200),
+                                            new Dimension(GridSizeMode.Absolute, 10),
+                                            new Dimension(),
+                                            new Dimension(GridSizeMode.Absolute, 10),
+                                            new Dimension(GridSizeMode.Absolute, 200),
+                                        },
+                                        Content = new[]
+                                        {
+                                            new Drawable[]
                                             {
-                                                RelativeSizeAxes = Axes.Both,
-                                            },
-                                            null,
-                                            new MatchStartControl
-                                            {
-                                                RelativeSizeAxes = Axes.Both,
-                                            },
-                                            null,
-                                            new TourneyButton
-                                            {
-                                                RelativeSizeAxes = Axes.None,
-                                                Size = new Vector2(200, 50),
-                                                Text = "Leave room",
-                                                Action = leaveRoom,
+                                                new TourneyButton
+                                                {
+                                                    RelativeSizeAxes = Axes.None,
+                                                    Size = new Vector2(140, 50),
+                                                    Text = "Back",
+                                                    Action = goBackToSetup,
+                                                },
+                                                null,
+                                                new MultiplayerSpectateButton
+                                                {
+                                                    RelativeSizeAxes = Axes.Both,
+                                                },
+                                                null,
+                                                new MatchStartControl
+                                                {
+                                                    RelativeSizeAxes = Axes.Both,
+                                                },
+                                                null,
+                                                new TourneyButton
+                                                {
+                                                    RelativeSizeAxes = Axes.None,
+                                                    Size = new Vector2(200, 50),
+                                                    Text = "Leave room",
+                                                    Action = leaveRoom,
+                                                },
                                             },
                                         },
                                     },
                                 },
                             },
-                        },
-                    }
+                        }
+                    },
                 },
                 createOverlay = new RoomCreateOverlay(new osu.Game.Online.Rooms.Room { Name = string.Empty })
                 {

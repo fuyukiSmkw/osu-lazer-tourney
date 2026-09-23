@@ -74,7 +74,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                     RelativeSizeAxes = Axes.X,
                     AutoSizeAxes = Axes.Y,
                 },
-                new ControlPanel
+                new SyncedControlPanel
                 {
                     Children = new Drawable[]
                     {

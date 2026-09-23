@@ -44,14 +44,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private Container screens = null!;
         private TourneyVideo video = null!;
 
-        public const int CONTROL_AREA_WIDTH = 200;
+        public const int CONTROL_AREA_WIDTH = 150;
+        public const int CONTROL_PANEL_WIDTH = 250;
 
         public const int STREAM_AREA_WIDTH = 1366;
         public const int STREAM_AREA_HEIGHT = (int)(STREAM_AREA_WIDTH / ASPECT_RATIO);
 
         public const float ASPECT_RATIO = 16 / 9f;
 
-        public const int REQUIRED_WIDTH = CONTROL_AREA_WIDTH * 2 + STREAM_AREA_WIDTH;
+        public const int REQUIRED_WIDTH = CONTROL_AREA_WIDTH + CONTROL_PANEL_WIDTH + STREAM_AREA_WIDTH;
 
         [Resolved(canBeNull: true)]
         private TournamentGameBase? tournamentGame { get; set; }
@@ -70,6 +71,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         [Cached]
         private readonly SpectateSession spectateSession = new SpectateSession();
+
+        /// <summary>
+        /// Shared referee countdown for the <c>/timer</c> chat command.
+        /// Hosted here so both control-panel send boxes share a single run.
+        /// </summary>
+        [Cached]
+        private readonly ChatTimerService chatTimerService = new ChatTimerService();
+
+        /// <summary>
+        /// Match-start countdown tick sounds. Hosted here so they play exactly once
+        /// no matter which screen is shown (the tournament screens don't host
+        /// <c>MultiplayerReadyButton</c>, which plays them officially).
+        /// </summary>
+        [Cached]
+        private readonly MatchStartCountdownSounds countdownSounds = new MatchStartCountdownSounds();
 
         private Container chatContainer = null!;
         private FillFlowContainer buttons = null!;
@@ -185,6 +201,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 },
                 musicController,
                 spectateSession,
+                chatTimerService,
+                countdownSounds,
             };
 
             foreach (var drawable in screens)

@@ -2,14 +2,15 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Game.Beatmaps;
 using osu.Game.Online.Rooms;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
-using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay;
 using osu.Game.Rulesets.Mods;
 
@@ -23,10 +24,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
         private SpectateSession spectateSession { get; set; } = null!;
 
         [Resolved]
-        private BeatmapManager beatmaps { get; set; } = null!;
+        private IBindable<WorkingBeatmap> workingBeatmap { get; set; } = null!;
 
         [Resolved]
-        private RulesetStore rulesets { get; set; } = null!;
+        private IBindable<RulesetInfo> globalRuleset { get; set; } = null!;
+
+        [Resolved]
+        private IBindable<IReadOnlyList<Mod>> globalMods { get; set; } = null!;
 
         protected BeatmapInfoScreen()
         {
@@ -39,10 +43,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
         }
 
         [BackgroundDependencyLoader]
-        private void load(TournamentOnlineState onlineState)
+        private void load()
         {
-            onlineStateRef = onlineState;
-            onlineState.CurrentPlaylistItem.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
+            workingBeatmap.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
+            globalRuleset.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
+            globalMods.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
             spectateSession.SpectatedScore.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
             CurrentMatch.BindValueChanged(_ => Scheduler.AddOnce(updateSongBar));
         }
@@ -62,25 +67,33 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
 
             if (score != null)
             {
-                // Spectating (or a retained result screen): map and ruleset come from the score,
-                // gameplay mods come from the room's required mods.
+                // Spectating (or a retained result screen): lock to the score's map,
+                // mods and ruleset until the next match starts or spectate is reset.
                 setFromRoomItem(score.ScoreInfo.BeatmapInfo, score.ScoreInfo.Ruleset, spectateSession.SpectatedItem);
                 return;
             }
 
-            var liveItem = onlineStateRef.CurrentPlaylistItem.Value;
+            // Otherwise follow the globally playing beatmap (room preview, spectate master
+            // clock, or local showcase replay) rather than the room's current item.
+            var working = workingBeatmap.Value;
+            var info = working?.BeatmapInfo;
 
-            if (liveItem == null)
+            if (info == null || working!.Beatmap.HitObjects.Count == 0)
             {
                 SongBar.SetSource(null, null, Array.Empty<Mod>(), Array.Empty<Mod>(), null);
                 return;
             }
 
-            var round = CurrentMatch.Value?.Round.Value;
-            IBeatmapInfo? info = round?.Beatmaps.FirstOrDefault(b => b.ID == liveItem.BeatmapID)?.Beatmap
-                                 ?? (IBeatmapInfo?)beatmaps.QueryBeatmap(b => b.OnlineID == liveItem.BeatmapID);
+            var ruleset = globalRuleset.Value;
+            Mod[] mods = globalMods.Value.ToArray();
 
-            setFromRoomItem(info, rulesets.GetRuleset(liveItem.RulesetID), liveItem);
+            RoundBeatmap? poolMatch = null;
+
+            if (info.OnlineID > 0)
+                poolMatch = CurrentMatch.Value?.Round.Value?.Beatmaps.FirstOrDefault(b => b.ID == info.OnlineID);
+
+            SongBar.SetSource(info, ruleset, mods, mods, poolMatch);
+            SongBar.FadeInFromZero(300, Easing.OutQuint);
         }
 
         private void setFromRoomItem(IBeatmapInfo? info, RulesetInfo? ruleset, MultiplayerPlaylistItem? item)
@@ -101,7 +114,5 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
             SongBar.SetSource(info, ruleset, required, required, poolMatch);
             SongBar.FadeInFromZero(300, Easing.OutQuint);
         }
-
-        private TournamentOnlineState onlineStateRef = null!;
     }
 }

@@ -31,7 +31,16 @@ Place the built `osu.Game.Rulesets.LazerTourney.dll` into the `rulesets/` subfol
 
 Requires .NET 10.0 or higher.
 
-Ensure you clone [osu!lazer](https://github.com/ppy/osu) in the parent directory, and then
+Ensure you clone [osu!lazer](https://github.com/ppy/osu) in the parent directory, and then use the `UseLocalOsu` script to add reference to your local clone:
+
+```bash
+./UseLocalOsu.sh
+
+# Use this script under Windows
+./UseLocalOsu.ps1
+```
+
+After that:
 
 ```bash
 dotnet build -c Release

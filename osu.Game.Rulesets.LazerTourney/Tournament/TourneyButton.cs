@@ -16,6 +16,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private void load()
         {
             Padding = new MarginPadding();
+            Margin = new MarginPadding { Vertical = -2 };
         }
     }
 }
