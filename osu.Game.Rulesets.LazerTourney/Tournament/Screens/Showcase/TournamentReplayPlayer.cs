@@ -5,6 +5,7 @@ using osu.Framework.Screens;
 using osu.Game.Scoring;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Play.HUD;
+using osu.Game.Screens.Ranking;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 {
@@ -40,6 +41,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             if (masterClock != null)
                 controller.Rate.BindTo(masterClock.UserPlaybackRate);
 
+            // Exposed before Attach: attaching flips HasPlayer, whose handlers read these.
+            controller.Clock = GameplayClockContainer;
+            controller.DrawableRuleset = DrawableRuleset;
             controller.Attach(this);
         }
 
@@ -62,6 +66,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             // ValidForResume is cleared). Transport controls go limp with it.
             controller.Detach(this);
         }
+
+        protected override ResultsScreen CreateResults(ScoreInfo score) => new TournamentResultsScreen(score)
+        {
+            // No re-watch/retry from the embedded showcase results: the watch button would
+            // push onto the real screen stack and hijack the tournament UI.
+            AllowWatchingReplay = false,
+            AllowRetry = false,
+        };
 
         protected override void Dispose(bool isDisposing)
         {

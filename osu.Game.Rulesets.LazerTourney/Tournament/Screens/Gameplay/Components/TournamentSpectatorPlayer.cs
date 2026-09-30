@@ -7,6 +7,7 @@ using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
+using osu.Game.Screens.Ranking;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 {
@@ -34,5 +35,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     label.RemoveAndDisposeImmediately();
             }
         }
+
+        protected override ResultsScreen CreateResults(ScoreInfo score) => new TournamentResultsScreen(score)
+        {
+            // No re-watch/retry from the embedded cell results: the watch button would
+            // push onto the real screen stack and hijack the tournament UI.
+            AllowWatchingReplay = false,
+            AllowRetry = false,
+        };
     }
 }
