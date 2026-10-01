@@ -6,6 +6,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Extensions.ObjectExtensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Logging;
 using osu.Game.Online.API;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Rooms;
@@ -91,7 +92,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (client.Room == null)
                 return;
 
-            var existingItem = Items.SingleOrDefault(i => i.ID == item.ID);
+            // FirstOrDefault (not SingleOrDefault): never throw on duplicate IDs.
+            // Any duplicates are collapsed by RemoveAll below, and addItem refuses to create new ones.
+            var existingItem = Items.FirstOrDefault(i => i.ID == item.ID);
 
             // Test if the only change between the two playlist items is the order.
             if (existingItem != null && existingItem.With(playlistOrder: item.PlaylistOrder).Equals(new PlaylistItem(item)))
@@ -113,8 +116,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 return;
 
             // Expired items have no history view here.
-            if (!item.Expired)
-                Items.Add(new PlaylistItem(item));
+            if (item.Expired)
+                return;
+
+            // Never hold two entries for one playlist item. Deferred event delegates
+            // (e.g. replayed after hidden periods) must not duplicate the initial population.
+            if (Items.Any(i => i.ID == item.ID))
+            {
+                Logger.Log($"Skipping duplicate queue entry for playlist item {item.ID}.", LoggingTarget.Runtime, LogLevel.Verbose);
+                return;
+            }
+
+            Items.Add(new PlaylistItem(item));
         }
 
         protected override void Dispose(bool isDisposing)
