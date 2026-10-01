@@ -94,6 +94,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, Score> scoresByUser = new Dictionary<int, Score>();
         private readonly HashSet<int> seenBreak = new HashSet<int>();
         private readonly HashSet<int> comboSubscribed = new HashSet<int>();
+        private Bindable<bool> preferNoVideo = null!;
         private readonly List<(BindableInt bindable, Action<ValueChangedEvent<int>> handler)> comboSubscriptions = new List<(BindableInt, Action<ValueChangedEvent<int>>)>();
 
         private IReadOnlyList<SpectateCell>? redCells;
@@ -174,6 +175,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             alwaysPlayFirstBreak = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             automaticallyDownload = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps);
             automaticallyDownload.BindValueChanged(_ => Scheduler.AddOnce(checkForAutomaticDownload));
+            preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
         }
 
         protected override void LoadComplete()
@@ -469,7 +471,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     if (beatmaps.IsAvailableLocally(new APIBeatmap { OnlineID = item.BeatmapID }))
                         return;
 
-                    beatmapDownloader.Download(beatmapSet);
+                    beatmapDownloader.Download(beatmapSet, preferNoVideo.Value);
                 }));
         }
 

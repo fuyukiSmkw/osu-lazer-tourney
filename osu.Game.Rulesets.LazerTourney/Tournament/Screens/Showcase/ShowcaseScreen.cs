@@ -14,6 +14,7 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Logging;
 using osu.Game.Beatmaps;
+using osu.Game.Configuration;
 using osu.Game.Database;
 using osu.Game.Graphics.Backgrounds;
 using osu.Game.Graphics.UserInterface;
@@ -105,14 +106,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
         private int importGeneration;
         private IDisposable? beatmapArrivalSubscription;
         private TaskCompletionSource<bool>? pendingArrivalSource;
+        private Bindable<bool> preferNoVideo = null!;
 
         [BackgroundDependencyLoader]
-        private void load()
+        private void load(OsuConfigManager config)
         {
             // Silent downloader: PostNotification is never set (RankedPlay precedent).
             beatmapDownloader = new BeatmapModelDownloader(beatmaps, api);
 
             var backgrounds = backgroundLoader = new SeasonalBackgroundLoader();
+
+            preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
 
             AddRangeInternal(new Drawable[]
             {
@@ -547,7 +551,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             Schedule(() =>
             {
                 if (!stale())
-                    beatmapDownloader.Download(set);
+                    beatmapDownloader.Download(set, preferNoVideo.Value);
             });
 
             bool arrived = await arrivalSource.Task.ConfigureAwait(false);
