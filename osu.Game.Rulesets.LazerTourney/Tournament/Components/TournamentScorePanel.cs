@@ -27,7 +27,6 @@ using osu.Game.Screens.Play.HUD;
 using osu.Framework.Testing;
 using osu.Framework.Extensions.IEnumerableExtensions;
 using osu.Game.Rulesets.UI;
-using Microsoft.Toolkit.HighPerformance;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Users;
 using osu.Framework.Graphics.Colour;
@@ -145,7 +144,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                     Padding = card_padding,
                                     ColumnDimensions = new[]
                                     {
-                                        new Dimension(GridSizeMode.Absolute, 220),
+                                        new Dimension(GridSizeMode.Absolute, 120),
                                         new Dimension(),
                                     },
                                     Content = new[]
@@ -378,9 +377,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                                                 {
                                                                     scoreCounter = new TournamentScoreCounter(!withFlair)
                                                                     {
-                                                                        Anchor = Anchor.Centre,
-                                                                        Origin = Anchor.Centre,
-                                                                        Margin = new MarginPadding { Top = 0, Bottom = 5 },
+                                                                        Anchor = Anchor.CentreLeft,
+                                                                        Origin = Anchor.CentreLeft,
+                                                                        Margin = new MarginPadding { Top = 0, Bottom = 5, Left = 10 },
                                                                         Current = { Value = 0 },
                                                                         Alpha = 0,
                                                                         AlwaysPresent = true
