@@ -18,6 +18,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
     /// Keeps global beatmap/ruleset/mods and background music in sync with the multiplayer room,
     /// mirroring MultiplayerMatchSubScreen (updateGameplayState plus begin/endHandlingTrack):
     /// while in a room the preview track of the room's current playlist item plays (looped);
+    /// while the room map is missing locally playback stays silent until the download completes;
     /// while spectating, the spectator master clock takes over that same track;
     /// while out of a room the default menu behaviour applies.
     /// </summary>
@@ -125,12 +126,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 
             if (local == null)
             {
-                // Mirror official: fall back to the default beatmap so menu music continues normally.
+                // The room map is missing locally: stay silent instead of falling through
+                // to menu music. The flag is cleared before switching the beatmap so the
+                // change notification sees no usable room track and never starts a preview.
                 // Resumes automatically once the room map is downloaded (see realm subscription above).
-                game.Beatmap.Value = beatmaps.GetWorkingBeatmap(null);
+                var previous = game.Beatmap.Value;
                 hasRoomTrack = false;
-                stopRoomPreview();
-                music.EnsurePlayingSomething();
+
+                if (previous != null && IsTrackUsable(previous))
+                    previous.Track.Looping = false;
+
+                game.Beatmap.Value = beatmaps.GetWorkingBeatmap(null);
+                previews.StopAnyPlaying(this);
+
+                // While suspended the spectator master clock owns the audio; leave it alone.
+                if (!MusicControlSuspended.Value)
+                    music.Stop();
+
                 return;
             }
 
