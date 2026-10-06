@@ -68,17 +68,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         public virtual void ExitTournament()
         {
-            visualAudioSettings?.RestoreBackup();
+            visualAudioSettings?.RestoreBackupAndSave();
             this.Exit();
         }
 
         protected override void Dispose(bool isDisposing)
         {
-            // Covers exits that bypass ExitTournament (e.g. closing the window):
-            // settings are background-saved on every change, so restore first.
-            visualAudioSettings?.RestoreBackup();
+            // Covers exits that bypass ExitTournament (e.g. closing the window).
+            visualAudioSettings?.RestoreBackupAndSave();
             base.Dispose(isDisposing);
         }
+
+        /// <summary>
+        /// Restores the user's settings with an immediate disk save.
+        /// Used for host exit requests, which may precede any background save flush.
+        /// </summary>
+        protected void RestoreVisualAudioSettings() => visualAudioSettings?.RestoreBackupAndSave();
 
         protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
         {

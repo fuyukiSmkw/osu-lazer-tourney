@@ -100,6 +100,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         }
 
         /// <summary>
+        /// Restores the backup and saves to disk immediately. Used on exit paths,
+        /// where the debounced background save might not flush before shutdown.
+        /// </summary>
+        public void RestoreBackupAndSave()
+        {
+            RestoreBackup();
+            config.Save();
+        }
+
+        /// <summary>
         /// Copies the live settings into the bracket object so saves persist them.
         /// Runs on every serialisation, which also drives the unsaved-changes detection.
         /// </summary>

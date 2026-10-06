@@ -152,7 +152,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             base.LoadComplete();
             narrowToastTray();
+
+            // Alt+F4 / window close button: restore the user's settings immediately,
+            // as the debounced background save might not flush before shutdown.
+            // (Update thread by contract of the event.)
+            if (host != null)
+                host.ExitRequested += onHostExitRequested;
         }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            if (host != null)
+                host.ExitRequested -= onHostExitRequested;
+
+            base.Dispose(isDisposing);
+        }
+
+        private void onHostExitRequested() => RestoreVisualAudioSettings();
 
         /// <summary>
         /// Narrows the notification toast column while the tournament client is active so popups
