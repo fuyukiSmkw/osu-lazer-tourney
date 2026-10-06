@@ -10,6 +10,8 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Threading;
 using osu.Game.Graphics.Backgrounds;
 using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Online.Multiplayer;
+using osu.Game.Online.Multiplayer.MatchTypes.TeamVersus;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
@@ -41,6 +43,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         [Resolved]
         private SpectateSession spectateSession { get; set; } = null!;
+
+        [Resolved]
+        private MultiplayerClient multiplayerClient { get; set; } = null!;
 
         private SeasonalBackgroundLoader backgroundLoader = null!;
 
@@ -164,17 +169,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 spectateSession.Assign();
             }, true);
 
-            spectateSession.HasTeamScores.BindValueChanged(_ => Schedule(() =>
-            {
-                if (State.Value == TourneyState.Playing && spectateSession.HasTeamScores.Value)
-                    scoreDisplay.FadeIn(100);
-                else
-                    scoreDisplay.FadeOut(100);
-            }));
+            spectateSession.HasTeamScores.BindValueChanged(_ => updateScoreVisibility());
+
+            multiplayerClient.RoomUpdated += () => Schedule(updateScoreVisibility);
 
             // Initial assignment in case we are already in a room.
             spectateSession.Assign();
         }
+
+        /// <summary>
+        /// Whether the joined room plays team versus. Team rooms always show the score bar.
+        /// </summary>
+        private bool isTeamVersusRoom() => multiplayerClient.Room?.MatchState is TeamVersusRoomState;
+
+        private void updateScoreVisibility() => Schedule(() =>
+        {
+            if (State.Value == TourneyState.Playing && (isTeamVersusRoom() || spectateSession.HasTeamScores.Value))
+                scoreDisplay.FadeIn(100);
+            else
+                scoreDisplay.FadeOut(100);
+        });
 
         /// <summary>
         /// Rebuilds the side grids for the given players-per-team count.
@@ -308,6 +322,29 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private ScheduledDelegate? scheduledScreenChange;
         private ScheduledDelegate? scheduledContract;
 
+        /// <summary>
+        /// Awards the current match point to the side with the higher live team total.
+        /// Only runs with live team totals; ties and finished matches are left alone.
+        /// </summary>
+        private void awardMatchPoint()
+        {
+            var match = CurrentMatch.Value;
+
+            if (match == null || match.Completed.Value || !spectateSession.HasTeamScores.Value)
+                return;
+
+            long team1 = scoreDisplay.Team1Score.Value;
+            long team2 = scoreDisplay.Team2Score.Value;
+
+            if (team1 == team2)
+                return;
+
+            if (team1 > team2)
+                match.Team1Score.Value = (match.Team1Score.Value ?? 0) + 1;
+            else
+                match.Team2Score.Value = (match.Team2Score.Value ?? 0) + 1;
+        }
+
         private TournamentMatchScoreDisplay scoreDisplay = null!;
 
         private TourneyState lastState;
@@ -337,8 +374,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             using (BeginDelayedSequence(300))
             {
-                // The live score bar only shows for team rooms (see HasTeamScores).
-                if (spectateSession.HasTeamScores.Value)
+                // Team rooms always show the score bar; other rooms only with live team totals.
+                if (isTeamVersusRoom() || spectateSession.HasTeamScores.Value)
                     scoreDisplay.FadeIn(100);
                 else
                     scoreDisplay.FadeOut(100);
@@ -357,7 +394,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 {
                     if (warmup.Value || CurrentMatch.Value == null) return;
 
-                    // TODO: wire score increment from online match results (phase B)
+                    // Award once, on entering ranking: the side with the higher live total takes the point.
+                    // Ties are left for the referee to decide manually.
+                    if (lastState != TourneyState.Ranking)
+                        awardMatchPoint();
                 }
 
                 switch (State.Value)
