@@ -24,10 +24,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         // only used for serialisation
         public List<TournamentProgression> Progressions = new List<TournamentProgression>();
 
+        /// <summary>
+        /// Visual and audio gameplay settings for the tournament. Null for brackets saved
+        /// before this object existed; the built-in defaults apply in that case.
+        /// </summary>
+        public VisualAudioSettings? VisualAudioSettings;
+
         [JsonIgnore] // updated manually in TournamentGameBase
         public Bindable<TournamentMatch?> CurrentMatch = new Bindable<TournamentMatch?>();
 
-        public Bindable<int> ChromaKeyWidth = new BindableInt(1024)
+        public Bindable<int> ChromaKeyWidth = new BindableInt(1366)
         {
             MinValue = 640,
             MaxValue = 1366,

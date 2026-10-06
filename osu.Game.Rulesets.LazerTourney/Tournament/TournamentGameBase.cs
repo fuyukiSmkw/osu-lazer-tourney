@@ -61,13 +61,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private readonly TaskCompletionSource<bool> bracketLoadTaskCompletionSource = new TaskCompletionSource<bool>();
 
         public TournamentOnlineState OnlineState = null!;
+        private VisualAudioSettingsController visualAudioSettings = null!;
 
         /// <summary>
         /// Exit the tournament client. Called from the setup screen's exit button.
         /// </summary>
         public virtual void ExitTournament()
         {
+            visualAudioSettings?.RestoreBackup();
             this.Exit();
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            // Covers exits that bypass ExitTournament (e.g. closing the window):
+            // settings are background-saved on every change, so restore first.
+            visualAudioSettings?.RestoreBackup();
+            base.Dispose(isDisposing);
         }
 
         protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
@@ -110,6 +120,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // and the subscribed room events never fire.
             AddInternal(OnlineState);
 
+            visualAudioSettings = new VisualAudioSettingsController();
+            // Must be added to the hierarchy, otherwise dependency injection never runs.
+            AddInternal(visualAudioSettings);
             var ongoingOperationTracker = new OngoingOperationTracker();
             dependencies.Cache(ongoingOperationTracker);
             AddInternal(ongoingOperationTracker);
@@ -140,6 +153,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                         ladder = JsonConvert.DeserializeObject<LadderInfo>(await sr.ReadToEndAsync().ConfigureAwait(false), new JsonPointConverter()) ?? ladder;
                     }
                 }
+
+                // Brackets saved before VisualAudioSettings existed fall back to the built-in defaults.
+                // Resolved here (rather than at apply time) so migration saves persist it.
+                ladder.VisualAudioSettings ??= new VisualAudioSettings();
 
                 var resolvedRuleset = ladder.Ruleset.Value != null
                     ? rulesetStore.GetRuleset(ladder.Ruleset.Value.ShortName)
@@ -227,6 +244,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 dependencies.Cache(ladder);
 
+                visualAudioSettings.ApplyFromBracket(ladder.VisualAudioSettings);
+
                 bracketLoadTaskCompletionSource.SetResult(true);
 
                 initialisationText.Expire();
@@ -293,11 +312,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             Ruleset? ruleset = rulesetInfo.CreateInstance();
 
-            // Same validity gate as lazer room creation (excludes system/non-playable/unimplemented mods).
-            APIMod[] allFreeMods = ruleset == null
-                ? Array.Empty<APIMod>()
-                : RoundBeatmap.GetAllFreeMods(ruleset);
-
             bool changed = false;
 
             foreach (var b in ladder.Rounds.SelectMany(r => r.Beatmaps))
@@ -321,7 +335,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 if (b.AllowedMods == null)
                 {
-                    b.AllowedMods = b.Freestyle ? Array.Empty<APIMod>() : allFreeMods;
+                    b.AllowedMods = Array.Empty<APIMod>();
                     changed = true;
                 }
             }
@@ -416,6 +430,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         public string GetSerialisedLadder()
         {
+            // Snapshot live settings first, so saves persist them and the
+            // unsaved-changes detection picks up slider/switch edits.
+            visualAudioSettings.SnapshotToBracket(ladder.VisualAudioSettings ??= new VisualAudioSettings());
+
             foreach (var r in ladder.Rounds)
                 r.Matches = ladder.Matches.Where(p => p.Round.Value == r).Select(p => p.ID).ToList();
 

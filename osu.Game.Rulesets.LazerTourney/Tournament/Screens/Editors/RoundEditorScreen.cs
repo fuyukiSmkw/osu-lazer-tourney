@@ -188,14 +188,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                 public void CreateNew()
                 {
                     // New maps get the same defaults as old-bracket migration:
-                    // freestyle off, no required mods, all free mods filled in.
-                    var ruleset = ladder.Ruleset.Value?.CreateInstance();
-
+                    // freestyle off, no required mods, no allowed mods.
                     var b = new RoundBeatmap
                     {
                         Freestyle = false,
                         RequiredMods = Array.Empty<APIMod>(),
-                        AllowedMods = ruleset == null ? Array.Empty<APIMod>() : RoundBeatmap.GetAllFreeMods(ruleset),
+                        AllowedMods = Array.Empty<APIMod>(),
                     };
 
                     round.Beatmaps.Add(b);
