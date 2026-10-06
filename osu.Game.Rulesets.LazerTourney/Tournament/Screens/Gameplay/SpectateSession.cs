@@ -331,10 +331,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             bool teamMode = room.MatchState is TeamVersusRoomState;
 
-            // Layout assigns every occupant (including not-downloaded users), matching the official
-            // PlayerGrid which keeps slots visible. Playability only gates startGameplay, and users
-            // outside CurrentMatchPlayingUserIds never enter Playing mid-match.
-            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(u => u.Role != MultiplayerRoomUserRole.Referee && u.State != MultiplayerUserState.Spectating);
+            // Only playable users (not referee/spectating/missing the map) take cells.
+            // Anything else leaves its slots on the idle background. Re-evaluated on every
+            // Assign, so pre-match downloads or state changes pick users up before the match starts.
+            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable);
 
             if (teamMode)
             {
@@ -374,7 +374,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private static bool isPlayable(MultiplayerRoomUser user)
             => user.Role != MultiplayerRoomUserRole.Referee
                && user.State != MultiplayerUserState.Spectating
-               && user.BeatmapAvailability is not { State: DownloadState.NotDownloaded };
+               && user.BeatmapAvailability is { State: DownloadState.LocallyAvailable };
 
         /// <summary>
         /// Emergency reset, equivalent to the official room exit-spectate then re-spectate flow:
