@@ -34,6 +34,7 @@ public partial class ListenerLoader : AbstractHandler
         [
             new LazerTourneyRulesetIconListener(),
             new ScreenHandlerManager(),
+            new SentryLoggerDisabler(),
         ];
     }
 

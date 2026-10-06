@@ -11,13 +11,11 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Logging;
-using osu.Game.Audio;
 using osu.Game.Beatmaps;
+using osu.Game.Configuration;
 using osu.Game.Database;
-using osu.Game.Graphics;
 using osu.Game.Graphics.Backgrounds;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Online.API;
@@ -30,15 +28,16 @@ using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components;
-using osu.Game.Rulesets.Mods;
+using osu.Game.Rulesets.UI;
 using osu.Game.Scoring;
 using osu.Game.Scoring.Legacy;
 using osu.Game.Screens;
 using osu.Game.Screens.Edit.Components;
 using osu.Game.Screens.Edit.Timing;
+using osu.Game.Screens.Play;
+using osu.Game.Screens.Play.HUD;
 using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
-using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 {
@@ -102,18 +101,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
         private Container? playerContainer;
         private OsuScreenStack? playerStack;
         private FillFlowContainer transportSection = null!;
+        private Container progressHost = null!;
 
         private int importGeneration;
         private IDisposable? beatmapArrivalSubscription;
         private TaskCompletionSource<bool>? pendingArrivalSource;
+        private Bindable<bool> preferNoVideo = null!;
 
         [BackgroundDependencyLoader]
-        private void load()
+        private void load(OsuConfigManager config)
         {
             // Silent downloader: PostNotification is never set (RankedPlay precedent).
             beatmapDownloader = new BeatmapModelDownloader(beatmaps, api);
 
             var backgrounds = backgroundLoader = new SeasonalBackgroundLoader();
+
+            preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
 
             AddRangeInternal(new Drawable[]
             {
@@ -239,38 +242,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                                                     TooltipText = "+5s",
                                                 },
                                             },
-                                        }
-                                        /*
-                                        new TourneyButton
-                                        {
-                                            RelativeSizeAxes = Axes.X,
-                                            Text = "Pause / resume",
-                                            Action = () => replayController.TogglePause(),
                                         },
-                                        new TourneyButton
+                                        progressHost = new Container
                                         {
                                             RelativeSizeAxes = Axes.X,
-                                            Text = "-10s",
-                                            Action = () => replayController.SeekSeconds(-10),
+                                            AutoSizeAxes = Axes.Y,
                                         },
-                                        new TourneyButton
-                                        {
-                                            RelativeSizeAxes = Axes.X,
-                                            Text = "-1s",
-                                            Action = () => replayController.SeekSeconds(-1),
-                                        },
-                                        new TourneyButton
-                                        {
-                                            RelativeSizeAxes = Axes.X,
-                                            Text = "+1s",
-                                            Action = () => replayController.SeekSeconds(1),
-                                        },
-                                        new TourneyButton
-                                        {
-                                            RelativeSizeAxes = Axes.X,
-                                            Text = "+10s",
-                                            Action = () => replayController.SeekSeconds(10),
-                                        },*/
                                     },
                                 },
                             },
@@ -281,7 +258,60 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 },
             });
 
-            replayController.HasPlayer.BindValueChanged(v => transportSection.Alpha = v.NewValue ? 1 : 0.4f, true);
+            replayController.HasPlayer.BindValueChanged(v =>
+            {
+                transportSection.Alpha = v.NewValue ? 1 : 0.4f;
+                updateProgress();
+            }, true);
+        }
+
+        /// <summary>
+        /// Rebuilds the song progress bar for the current player.
+        /// <see cref="ArgonSongProgress"/> resolves its clock/ruleset/player from its ancestors
+        /// (like the official replay HUD does), so it is hosted in a container providing
+        /// the live player's instances and recreated on every attach. Nothing is hosted
+        /// while idle, keeping the bar inert when not playing.
+        /// </summary>
+        private void updateProgress()
+        {
+            progressHost.Clear();
+
+            var player = replayController.Player;
+            var clock = replayController.Clock;
+            var ruleset = replayController.DrawableRuleset;
+
+            if (!replayController.HasPlayer.Value || player == null || clock == null || ruleset == null)
+                return;
+
+            progressHost.Child = new PlayerDependencyContainer(player, clock, ruleset)
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Child = new ArgonSongProgress(),
+            };
+        }
+
+        private partial class PlayerDependencyContainer : Container
+        {
+            private readonly Player player;
+            private readonly IGameplayClock clock;
+            private readonly DrawableRuleset drawableRuleset;
+
+            public PlayerDependencyContainer(Player player, IGameplayClock clock, DrawableRuleset drawableRuleset)
+            {
+                this.player = player;
+                this.clock = clock;
+                this.drawableRuleset = drawableRuleset;
+            }
+
+            protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
+            {
+                var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
+                dependencies.CacheAs<Player>(player);
+                dependencies.CacheAs<IGameplayClock>(clock);
+                dependencies.CacheAs<DrawableRuleset>(drawableRuleset);
+                return dependencies;
+            }
         }
 
         private partial class SeekButton : IconButton
@@ -521,7 +551,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             Schedule(() =>
             {
                 if (!stale())
-                    beatmapDownloader.Download(set);
+                    beatmapDownloader.Download(set, preferNoVideo.Value);
             });
 
             bool arrived = await arrivalSource.Task.ConfigureAwait(false);
@@ -636,6 +666,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
         private void teardownPlayer()
         {
+            // Detach synchronously: Expire() below only disposes after the fade finishes,
+            // but the reset already invalidates the track this frame. Leaving the progress
+            // bar (or transport buttons) wired to the dying player until then allows seeks
+            // into a disposed track -> ObjectDisposedException. Detach is idempotent, so the
+            // later Dispose-time call is a safe no-op.
+            var player = replayController.Player;
+
+            if (player != null)
+                replayController.Detach(player);
+
             if (playerContainer != null)
             {
                 // FadeOut-then-Expire (GameplayScreen rebuildLayout precedent).
@@ -665,8 +705,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             importGeneration++;
             cancelPendingArrival();
 
-            if (osuGame != null)
-                osuGame.UnregisterImportHandler(this);
+            osuGame?.UnregisterImportHandler(this);
         }
     }
 }

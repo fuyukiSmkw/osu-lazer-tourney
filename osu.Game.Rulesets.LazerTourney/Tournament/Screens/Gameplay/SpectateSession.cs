@@ -94,6 +94,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, Score> scoresByUser = new Dictionary<int, Score>();
         private readonly HashSet<int> seenBreak = new HashSet<int>();
         private readonly HashSet<int> comboSubscribed = new HashSet<int>();
+        private Bindable<bool> preferNoVideo = null!;
         private readonly List<(BindableInt bindable, Action<ValueChangedEvent<int>> handler)> comboSubscriptions = new List<(BindableInt, Action<ValueChangedEvent<int>>)>();
 
         private IReadOnlyList<SpectateCell>? redCells;
@@ -104,6 +105,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private MasterGameplayClockContainer? masterClock;
         private SpectatorSyncManager? syncManager;
         private WorkingBeatmap? masterWorkingBeatmap;
+
+        // Incremented on every master/sync rebuild and teardown so late async
+        // callbacks (score provider loads, scheduled attaches) can drop stale work.
+        private int clockGeneration;
+
+        // Whether the gameplay visuals are currently shown. Set by GameplayScreen Show/Hide.
+        // Player clocks are driven by the official gameplay containers only while visible;
+        // everywhere else this session pumps them so spectating follows live progress.
+        private bool gameplayVisible;
 
         private HashSet<int> providerUserIds = new HashSet<int>();
         private TournamentLeaderboardProvider? leaderboardProvider;
@@ -174,6 +184,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             alwaysPlayFirstBreak = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             automaticallyDownload = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps);
             automaticallyDownload.BindValueChanged(_ => Scheduler.AddOnce(checkForAutomaticDownload));
+            preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
         }
 
         protected override void LoadComplete()
@@ -219,6 +230,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             redCells = red;
             blueCells = blue;
         }
+
+        /// <summary>
+        /// Tracks whether the gameplay visuals are shown. Must follow GameplayScreen Show/Hide:
+        /// hiding only fades the screen out, so drawables keep reporting present while frozen.
+        /// </summary>
+        public void SetGameplayVisible(bool visible) => gameplayVisible = visible;
 
         /// <summary>
         /// Recomputes slot assignment, labels, watches and score provider.
@@ -325,10 +342,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             bool teamMode = room.MatchState is TeamVersusRoomState;
 
-            // Layout assigns every occupant (including not-downloaded users), matching the official
-            // PlayerGrid which keeps slots visible. Playability only gates startGameplay, and users
-            // outside CurrentMatchPlayingUserIds never enter Playing mid-match.
-            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(u => u.Role != MultiplayerRoomUserRole.Referee && u.State != MultiplayerUserState.Spectating);
+            // Only playable users (not referee/spectating/missing the map) take cells.
+            // Anything else leaves its slots on the idle background. Re-evaluated on every
+            // Assign, so pre-match downloads or state changes pick users up before the match starts.
+            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable);
 
             if (teamMode)
             {
@@ -368,7 +385,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private static bool isPlayable(MultiplayerRoomUser user)
             => user.Role != MultiplayerRoomUserRole.Referee
                && user.State != MultiplayerUserState.Spectating
-               && user.BeatmapAvailability is not { State: DownloadState.NotDownloaded };
+               && user.BeatmapAvailability is { State: DownloadState.LocallyAvailable };
 
         /// <summary>
         /// Emergency reset, equivalent to the official room exit-spectate then re-spectate flow:
@@ -469,7 +486,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     if (beatmaps.IsAvailableLocally(new APIBeatmap { OnlineID = item.BeatmapID }))
                         return;
 
-                    beatmapDownloader.Download(beatmapSet);
+                    beatmapDownloader.Download(beatmapSet, preferNoVideo.Value);
                 }));
         }
 
@@ -720,18 +737,46 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             SpectatedItem ??= multiplayerClient.Room?.CurrentPlaylistItem.Clone();
             updateSpectatedScore();
 
+            // Captured so the deferred attachment below can detect a clock generation
+            // change in between (teardown, master rebuild, new match). Attachments from
+            // an older generation must never mix clocks and scores across generations.
+            int generation = clockGeneration;
+
+            // Defer area/clock creation to the update thread so concurrent triggers
+            // (Assign catch-up, user state changes, user-map completion) collapse into
+            // a single attachment. This keeps exactly one managed clock per user,
+            // which SpectatorSyncManager requires to start normally.
             Schedule(() =>
             {
+                if (generation != clockGeneration)
+                    return;
+
                 if (syncManager == null)
                     return;
 
                 if (!cellsByUser.TryGetValue(userId, out SpectateCell? cell) || cell.HasPlay)
                     return;
 
-                if (!scoresByUser.TryGetValue(userId, out Score? playScore))
+                // Drop stale schedules (e.g. teardown or reassignment replaced the score).
+                if (!scoresByUser.TryGetValue(userId, out Score? playScore) || !ReferenceEquals(playScore, score))
                     return;
 
+                // Avoid leaking a previous clock when retrying within the same sync manager.
+                if (clocksByUser.TryGetValue(userId, out SpectatorPlayerClock? oldClock))
+                {
+                    clocksByUser.Remove(userId);
+                    syncManager.RemoveManagedClock(oldClock);
+                }
+
                 var clock = syncManager.CreateManagedClock();
+
+                // Clocks created after the master has started (mid-match joins, download
+                // completions, retries) begin at the live point instead of zero so they do
+                // not replay already-passed progress at catch-up rate. The first received
+                // bundle may still adjust the player start time further via SetGameplayStartTime.
+                if (syncManager.CurrentMasterTime > 0)
+                    clock.Seek(syncManager.CurrentMasterTime);
+
                 var area = new TournamentPlayerArea(userId, clock);
 
                 clocksByUser[userId] = clock;
@@ -850,15 +895,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // A beatmap without hit objects (e.g. the empty default beatmap used as fallback
             // when the room map is not downloaded) cannot back a master clock:
             // MasterGameplayClockContainer reads the first hit object in its constructor.
+            // Keep existing clocks untouched so clockItemId stays stale and a later
+            // Assign retries once the map is available.
             if (masterBeatmap.Beatmap.HitObjects.Count == 0)
             {
                 Logger.Log("Skipping master clock build: selected beatmap has no hit objects.", LoggingTarget.Runtime, LogLevel.Verbose);
-                return masterClock != null && syncManager != null;
+                return false;
             }
 
-            masterClock?.Expire();
+            // Detach the dying clock from the shared live track first so queued
+            // SchedulerAfterChildren starts land on a virtual track instead of a disposed one.
+            if (masterClock != null)
+            {
+                masterClock.StopUsingBeatmapClock();
+                masterClock.Expire();
+                masterClock = null;
+            }
 
-            syncManager?.Expire();
+            if (syncManager != null)
+            {
+                syncManager.Expire();
+                syncManager = null;
+            }
+
+            clockGeneration++;
+
 
             masterWorkingBeatmap = masterBeatmap;
             clockFromItem = currentItem == null || masterBeatmap.BeatmapInfo?.OnlineID == currentItem.BeatmapID;
@@ -877,8 +938,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             if (!TournamentMusicController.IsTrackUsable(masterBeatmap))
                 masterBeatmap.LoadTrack();
 
-            AddInternal(masterClock = new MasterGameplayClockContainer(masterBeatmap, 0));
-            AddInternal(syncManager = new SpectatorSyncManager(masterClock) { ReadyToStart = performInitialSeek });
+            int generation = clockGeneration;
+            var newMaster = new MasterGameplayClockContainer(masterBeatmap, 0);
+            var newSync = new SpectatorSyncManager(newMaster)
+            {
+                ReadyToStart = () =>
+                {
+                    // Drop seeks from an expired generation (rebuilt or torn down since).
+                    if (generation != clockGeneration)
+                        return;
+
+                    performInitialSeek();
+                }
+            };
+
+            AddInternal(masterClock = newMaster);
+            AddInternal(syncManager = newSync);
             return true;
         }
 
@@ -902,6 +977,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             startTimes.RemoveAll(t => mean - t > 1000);
 
             masterClock.Reset(startTimes.Min(), true);
+
+            // Prime every managed clock across the anchor jump. The master's track just
+            // teleported (e.g. from the preview position to live), leaving a one-frame huge
+            // ElapsedFrameTime behind it. A running clock consuming that spike in the
+            // unclamped running branch of SpectatorPlayerClock.ProcessFrame would gain the
+            // whole jump at once (doubling its time and parking it minutes ahead of live,
+            // frozen by the ahead rule for the rest of the match). All managed clocks are
+            // still stopped at this point (the sync manager only starts them after
+            // ReadyToStart returns), so pumping them now merely fast-forwards their
+            // last-seen master time to the post-jump point without advancing them.
+            foreach (var primedClock in clocksByUser.Values)
+                primedClock.ProcessFrame();
         }
 
         private void removeClock(int userId)
@@ -921,16 +1008,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         /// <summary>
-        /// Advances player clocks even while the gameplay visuals are hidden.
+        /// Advances player clocks that the official gameplay containers are not driving.
         /// Hidden subtrees skip updates (see CompositeDrawable.UpdateSubTree), which would freeze
-        /// player clocks against the real-time master track and force a 2x catch-up on return.
-        /// SpectatorPlayerClock.ProcessFrame consumes each master advance exactly once, so pumping
-        /// here is safe alongside the official containers while visible.
+        /// player clocks against the real-time master track: the master would stall as too far ahead
+        /// and everything would resume from the frozen point on return instead of live progress.
+        /// While visible, each loaded TournamentSpectatorPlayer's GameplayClockContainer already pumps
+        /// its SpectatorPlayerClock once per frame via FramedClock.ProcessFrame, so pumping here
+        /// as well would double-advance catch-up (the stopped-master branch in
+        /// SpectatorPlayerClock.ProcessFrame has no same-frame guard).
         /// </summary>
         private void pumpPlayerClocks()
         {
-            foreach (var clock in clocksByUser.Values)
+            foreach (var (userId, clock) in clocksByUser.ToList())
+            {
+                // The official container is driving this clock; do not pump a second time.
+                if (gameplayVisible
+                    && cellsByUser.TryGetValue(userId, out SpectateCell? cell)
+                    && cell.PlayArea?.PlayerLoaded == true)
+                    continue;
+
+                // While hidden, frame arrival does not refresh the player's waiting flag
+                // (it is recomputed in the player's UpdateAfterChildren). Refresh from received
+                // frames so a stale wait does not freeze the clock: a spuriously running clock
+                // parks ahead harmlessly and re-syncs on its own.
+                if (!gameplayVisible && scoresByUser.TryGetValue(userId, out Score? waitingScore))
+                    clock.WaitingOnFrames = waitingScore.Replay.Frames.Count == 0;
+
                 clock.ProcessFrame();
+            }
         }
 
         private void checkAudioSource()
@@ -1008,8 +1113,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             var users = room.Users.Where(u => assignedSet.Contains(u.UserID)).ToArray();
 
-            LoadComponentAsync(leaderboardProvider = new TournamentLeaderboardProvider(users), loaded =>
+            int generation = clockGeneration;
+            var provider = new TournamentLeaderboardProvider(users);
+
+            LoadComponentAsync(leaderboardProvider = provider, loaded =>
             {
+                // Drop loads that finished after a rebuild or teardown.
+                if (generation != clockGeneration || !ReferenceEquals(leaderboardProvider, provider))
+                {
+                    loaded.Expire();
+                    return;
+                }
+
                 AddInternal(loaded);
                 leaderboardLoaded = true;
 
@@ -1088,6 +1203,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private void teardownVisuals()
         {
+            // Invalidate all pending scheduled attaches and async provider loads.
+            clockGeneration++;
 
             foreach (var cell in cellsByUser.Values)
                 cell.ClearPlay();

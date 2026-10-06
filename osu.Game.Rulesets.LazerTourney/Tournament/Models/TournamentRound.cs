@@ -20,6 +20,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public readonly BindableInt BestOf = new BindableInt(9) { Default = 9, MinValue = 3, MaxValue = 23 };
         public readonly BindableInt BanCount = new BindableInt(1) { Default = 1, MinValue = 0, MaxValue = 5 };
 
+        /// <summary>
+        /// Default protects per team for matches in this round. Missing in old brackets, which read as 0.
+        /// </summary>
+        public readonly BindableInt ProtectCount = new BindableInt(0) { Default = 0, MinValue = 0, MaxValue = 5 };
+
         [JsonProperty]
         public readonly BindableList<RoundBeatmap> Beatmaps = new BindableList<RoundBeatmap>();
 

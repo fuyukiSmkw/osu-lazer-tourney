@@ -2,23 +2,29 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Sprites;
 using osu.Game.Configuration;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
+using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
+using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.Scoring;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -121,7 +127,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         {
             bool inRoom = onlineState.RoomJoined.Value;
 
-            fillFlow.Children = new Drawable[]
+            var children = new List<Drawable>
             {
                 new ActionableInfo
                 {
@@ -200,6 +206,202 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                     ButtonColour = colours.Red3,
                     Action = onQuitPressed,
                 }
+            };
+
+            // Visual & audio settings go right before the quit button.
+            children.InsertRange(children.Count - 1, visualAudioSettingsSection());
+
+            fillFlow.Children = children.ToArray();
+        }
+
+        /// <summary>
+        /// Builds the Visual &amp; Audio settings section. Controls bind the lazer settings directly,
+        /// so edits apply live; values are persisted to the bracket file on save.
+        /// </summary>
+        private IEnumerable<Drawable> visualAudioSettingsSection()
+        {
+            yield return new OsuSpriteText
+            {
+                Text = "Visual & Audio settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            yield return sectionHeader("General");
+
+            yield return new LabelledDropdown<ScoringMode>(padded: true)
+            {
+                Label = "Score display mode",
+                Items = Enum.GetValues<ScoringMode>(),
+                Current = config.GetBindable<ScoringMode>(OsuSetting.ScoreDisplayMode),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Hit lighting",
+                Current = config.GetBindable<bool>(OsuSetting.HitLighting),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Star fountains",
+                Current = config.GetBindable<bool>(OsuSetting.StarFountains),
+            };
+
+            yield return sectionHeader("Audio");
+
+            yield return new SettingsSlider<float>
+            {
+                LabelText = "Positional hitsounds",
+                Current = config.GetBindable<float>(OsuSetting.PositionalHitsoundsLevel),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Always play first combo break",
+                Current = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak),
+            };
+
+            yield return sectionHeader("Background");
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Background dim",
+                Current = config.GetBindable<double>(OsuSetting.DimLevel),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Background blur",
+                Current = config.GetBindable<double>(OsuSetting.BlurLevel),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Lighten during breaks",
+                Current = config.GetBindable<bool>(OsuSetting.LightenDuringBreaks),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Fade playfield when health low",
+                Current = config.GetBindable<bool>(OsuSetting.FadePlayfieldWhenHealthLow),
+            };
+
+            yield return sectionHeader("Beatmap");
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Beatmap skins",
+                Current = config.GetBindable<bool>(OsuSetting.BeatmapSkins),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Beatmap colours",
+                Current = config.GetBindable<bool>(OsuSetting.BeatmapColours),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Beatmap hitsounds",
+                Current = config.GetBindable<bool>(OsuSetting.BeatmapHitsounds),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Show storyboard",
+                Current = config.GetBindable<bool>(OsuSetting.ShowStoryboard),
+            };
+
+            yield return new SettingsSlider<float>
+            {
+                LabelText = "Combo colour normalisation",
+                Current = config.GetBindable<float>(OsuSetting.ComboColourNormalisationAmount),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return sectionHeader("HUD");
+
+            yield return new LabelledDropdown<HUDVisibilityMode>(padded: true)
+            {
+                Label = "HUD visibility mode",
+                Items = Enum.GetValues<HUDVisibilityMode>(),
+                Current = config.GetBindable<HUDVisibilityMode>(OsuSetting.HUDVisibilityMode),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Show replay settings overlay",
+                Current = config.GetBindable<bool>(OsuSetting.ReplaySettingsOverlay),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Always show key overlay",
+                Current = config.GetBindable<bool>(OsuSetting.KeyOverlay),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Always show gameplay leaderboard",
+                Current = config.GetBindable<bool>(OsuSetting.GameplayLeaderboard),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Show health display when can't fail",
+                Current = config.GetBindable<bool>(OsuSetting.ShowHealthDisplayWhenCantFail),
+            };
+
+            yield return sectionHeader("Input");
+
+            yield return new SettingsSlider<float>
+            {
+                LabelText = "Gameplay cursor size",
+                Current = config.GetBindable<float>(OsuSetting.GameplayCursorSize),
+                KeyboardStep = 0.01f,
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Auto cursor size",
+                Current = config.GetBindable<bool>(OsuSetting.AutoCursorSize),
+            };
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Gameplay cursor during touch",
+                Current = config.GetBindable<bool>(OsuSetting.GameplayCursorDuringTouch),
+            };
+
+            if (RuntimeInfo.OS == RuntimeInfo.Platform.Windows)
+            {
+                yield return new LabelledSwitchButton
+                {
+                    Label = "Disable Windows key during gameplay",
+                    Current = config.GetBindable<bool>(OsuSetting.GameplayDisableWinKey),
+                };
+            }
+
+            yield return sectionHeader("Mods");
+
+            yield return new LabelledSwitchButton
+            {
+                Label = "Increase first object visibility",
+                Current = config.GetBindable<bool>(OsuSetting.IncreaseFirstObjectVisibility),
+            };
+
+            static OsuSpriteText sectionHeader(string text) => new OsuSpriteText
+            {
+                Text = text,
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
             };
         }
 

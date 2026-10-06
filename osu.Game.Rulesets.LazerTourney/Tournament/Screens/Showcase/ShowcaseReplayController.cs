@@ -2,6 +2,8 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using osu.Framework.Bindables;
+using osu.Game.Rulesets.UI;
+using osu.Game.Screens.Play;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 {
@@ -24,6 +26,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
         public TournamentReplayPlayer? Player { get; private set; }
 
+        /// <summary>
+        /// Live gameplay clock of the attached player, for dependency-providing containers.
+        /// </summary>
+        public IGameplayClock? Clock { get; set; }
+
+        /// <summary>
+        /// Live drawable ruleset of the attached player, for dependency-providing containers.
+        /// </summary>
+        public DrawableRuleset? DrawableRuleset { get; set; }
+
         public void Attach(TournamentReplayPlayer player)
         {
             Player = player;
@@ -35,6 +47,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             if (Player == player)
                 Player = null;
 
+            Clock = null;
+            DrawableRuleset = null;
             HasPlayer.Value = false;
         }
 

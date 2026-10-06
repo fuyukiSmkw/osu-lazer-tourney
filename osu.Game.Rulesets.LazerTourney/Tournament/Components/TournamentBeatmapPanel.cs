@@ -9,6 +9,7 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Localisation;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.Drawables;
@@ -37,6 +38,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private readonly Bindable<TournamentMatch?> currentMatch = new Bindable<TournamentMatch?>();
 
         private Box flash = null!;
+
+        private Container protectMarker = null!;
+        private Box protectMarkerBackground = null!;
 
         private Drawable? categoryIcon;
         private TournamentModDisplay? requiredDisplay;
@@ -186,7 +190,39 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             updateModVisibility(ladder.DisplayCategoryModIcon.Value, ladder.DisplayRequiredMods.Value);
 
             ladder.DisplayCategoryModIcon.BindValueChanged(_ => updateModVisibility(ladder.DisplayCategoryModIcon.Value, ladder.DisplayRequiredMods.Value));
-            ladder.DisplayRequiredMods.BindValueChanged(_ => updateModVisibility(ladder.DisplayCategoryModIcon.Value, ladder.DisplayRequiredMods.Value));
+            ladder.DisplayRequiredMods.BindValueChanged(_ => updateModVisibility(ladder.DisplayRequiredMods.Value, ladder.DisplayRequiredMods.Value));
+
+            // Persistent protect marker: a right-triangle corner ribbon (team colour)
+            // with a white bookmark, right angle aligned to the panel's top-right corner.
+            // A rotated square clipped by the masked container gives exact legs.
+            // Added last to stay on top.
+            AddInternal(protectMarker = new Container
+            {
+                Anchor = Anchor.TopRight,
+                Origin = Anchor.TopRight,
+                Size = new Vector2(36),
+                Masking = true,
+                Alpha = 0,
+                Children = new Drawable[]
+                {
+                    protectMarkerBackground = new Box
+                    {
+                        Size = new Vector2(52),
+                        Anchor = Anchor.TopRight,
+                        Origin = Anchor.Centre,
+                        Rotation = 45,
+                    },
+                    new SpriteIcon
+                    {
+                        Anchor = Anchor.TopRight,
+                        Origin = Anchor.Centre,
+                        Position = new Vector2(-12, 12),
+                        Icon = FontAwesome.Solid.Bookmark,
+                        Size = new Vector2(14),
+                        Colour = Color4.White,
+                    },
+                },
+            });
         }
 
         /// <summary>
@@ -217,7 +253,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private void picksBansOnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
             => Scheduler.AddOnce(updateState);
 
-        private BeatmapChoice? choice;
+        private BeatmapChoice? protectChoice;
+        private BeatmapChoice? playChoice;
 
         private void updateState()
         {
@@ -226,20 +263,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 return;
             }
 
-            var newChoice = currentMatch.Value.PicksBans.FirstOrDefault(p => p.BeatmapID == Beatmap?.OnlineID);
+            // A map may carry both a protect record and a later pick (or ban, never both);
+            // the protect marker persists while the pick/ban drives the border.
+            var newProtectChoice = currentMatch.Value.PicksBans.FirstOrDefault(p => p.BeatmapID == Beatmap?.OnlineID && p.Type == ChoiceType.Protect);
+            var newPlayChoice = currentMatch.Value.PicksBans.FirstOrDefault(p => p.BeatmapID == Beatmap?.OnlineID && p.Type != ChoiceType.Protect);
 
-            bool shouldFlash = newChoice != choice;
+            bool shouldFlash = !ReferenceEquals(newProtectChoice, protectChoice) || !ReferenceEquals(newPlayChoice, playChoice);
 
-            if (newChoice != null)
+            if (newPlayChoice != null)
             {
                 if (shouldFlash)
                     flash.FadeOutFromOne(500).Loop(0, 10);
 
                 BorderThickness = 6;
 
-                BorderColour = TournamentColours.GetTeamColour(newChoice.Team);
+                BorderColour = TournamentColours.GetTeamColour(newPlayChoice.Team);
 
-                switch (newChoice.Type)
+                switch (newPlayChoice.Type)
                 {
                     case ChoiceType.Pick:
                         Colour = Color4.White;
@@ -252,6 +292,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                         break;
                 }
             }
+            else if (newProtectChoice != null)
+            {
+                if (shouldFlash)
+                    flash.FadeOutFromOne(500).Loop(0, 10);
+
+                // Protects never grey out the map; the border only flashes and then goes away.
+                Colour = Color4.White;
+                Alpha = 1;
+
+                BorderThickness = 6;
+                BorderColour = TournamentColours.GetTeamColour(newProtectChoice.Team);
+
+                var captured = newProtectChoice;
+                Scheduler.AddDelayed(() =>
+                {
+                    // Still the same lone protect (not picked/banned or removed since)?
+                    if (ReferenceEquals(protectChoice, captured) && playChoice == null)
+                        BorderThickness = 0;
+                }, 6000);
+            }
             else
             {
                 Colour = Color4.White;
@@ -259,7 +319,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 Alpha = 1;
             }
 
-            choice = newChoice;
+            protectMarker.Alpha = newProtectChoice != null ? 1 : 0;
+
+            if (newProtectChoice != null)
+                protectMarkerBackground.Colour = TournamentColours.GetTeamColour(newProtectChoice.Team);
+
+            protectChoice = newProtectChoice;
+            playChoice = newPlayChoice;
         }
 
         private partial class NoUnloadBeatmapSetCover : UpdateableOnlineBeatmapSetCover

@@ -16,7 +16,7 @@ public static class HandlerExtension
 
     private static FieldInfo? findFieldInstanceInBaseType(Type baseType, Type type)
     {
-        var field = baseType.GetFields() // INSTANCE_FLAG
+        var field = baseType.GetFields(INSTANCE_FLAG)
                             .FirstOrDefault(f => f.FieldType == type);
 
         if (field == null && baseType.BaseType != null)
@@ -38,7 +38,7 @@ public static class HandlerExtension
 
     private static FieldInfo? findFieldInstanceByName(Type baseType, string name)
     {
-        var field = baseType.GetField(name, INSTANCE_FLAG); // INSTANCE_FLAG
+        var field = baseType.GetField(name, INSTANCE_FLAG);
 
         if (field == null && baseType.BaseType != null)
             field = findFieldInstanceByName(baseType.BaseType, name);

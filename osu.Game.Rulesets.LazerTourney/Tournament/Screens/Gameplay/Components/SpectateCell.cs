@@ -43,9 +43,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private OsuSpriteText usernameText = null!;
         private Color4 usernameColour;
         private Container logoContainer = null!;
+        private OsuLogo logo = null!;
         private Background? idleBackground;
 
         private const double idle_fade_in_duration = 300;
+
+        /// <summary>
+        /// Cell height at which the idle logo and username sizes look right (2-4 players per team).
+        /// Both scale proportionally with the actual cell height, so single large cells
+        /// (1 player per team, showcase) keep the same visual weight.
+        /// </summary>
+        private const float reference_cell_height = 256f;
+
+        private const float base_logo_scale = 0.35f;
+        private const float base_username_size = 44f;
+
+        private float lastScaledHeight = -1;
 
         private const float combobreak_peak_scale = 1.3f;
         private const double combobreak_fast_duration = 500;
@@ -84,11 +97,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     Alpha = 0,
                     Children =
                     [
-                        new OsuLogo
+                        logo = new OsuLogo
                         {
                             Triangles = true,
                             Ripple = true,
-                            Scale = new Vector2(0.35f),
+                            Scale = new Vector2(base_logo_scale),
                             Origin = Anchor.Centre,
                             Anchor = Anchor.Centre,
                         },
@@ -103,7 +116,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                         Horizontal = 5,
                         Vertical = 2,
                     },
-                    Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 44),
+                    Font = OsuFont.GetFont(weight: FontWeight.Bold, size: base_username_size),
                     Depth = float.MinValue,
                     Alpha = 0,
                     ShadowColour = new Color4(0, 0, 0, 0.5f),
@@ -120,6 +133,30 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             beatmapCopy.BindValueChanged(_ => updateBackgroundRequested());
 
             updateBackgroundRequested();
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+            updateRelativeSizes();
+        }
+
+        /// <summary>
+        /// Scales the idle logo and the username label with the cell height.
+        /// Only reapplies on height changes; never touches username scale (combo-break feedback owns that).
+        /// </summary>
+        private void updateRelativeSizes()
+        {
+            float height = DrawHeight;
+
+            if (height <= 0 || Precision.AlmostEquals(height, lastScaledHeight))
+                return;
+
+            lastScaledHeight = height;
+
+            float ratio = height / reference_cell_height;
+            logo.Scale = new Vector2(base_logo_scale * ratio);
+            usernameText.Font = usernameText.Font.With(size: base_username_size * ratio);
         }
 
         private void updateBackgroundRequested() => Scheduler.AddOnce(updateBackground);

@@ -2,10 +2,8 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
-using System.Collections.Generic;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
-using osu.Framework.Audio.Track;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
@@ -13,7 +11,6 @@ using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
-using osu.Game.Rulesets.Mods;
 using osu.Game.Scoring;
 using osu.Game.Screens;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
@@ -69,7 +66,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private readonly Container gameplayContent;
         private readonly LoadingLayer loadingLayer;
         private OsuScreenStack? stack;
-        private Track? loadedTrack;
 
         public TournamentPlayerArea(int userId, SpectatorPlayerClock clock)
         {
@@ -104,8 +100,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
             // Required to avoid crashes, but we really don't want to be doing this if we can avoid it.
             // If we get to fixing this, we will want to investigate every access to `Track` in gameplay.
+            // The loaded track is intentionally kept alive by the shared working beatmap cache.
+            // Disposing it here would poison every other cell and the master clock that share
+            // the same cached track instance, because TrackLoaded stays true afterwards.
             if (!workingBeatmap.TrackLoaded)
-                loadedTrack = workingBeatmap.LoadTrack();
+                workingBeatmap.LoadTrack();
 
             gameplayContent.Child = new PlayerIsolationContainer(workingBeatmap, Score.ScoreInfo.Ruleset, Score.ScoreInfo.Mods)
             {
@@ -150,7 +149,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
-            loadedTrack?.Dispose();
+            // Shared cached tracks must outlive any single cell. See LoadScore above.
         }
     }
 }
