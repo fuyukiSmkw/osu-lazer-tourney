@@ -110,6 +110,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         // callbacks (score provider loads, scheduled attaches) can drop stale work.
         private int clockGeneration;
 
+        // Whether the gameplay visuals are currently shown. Set by GameplayScreen Show/Hide.
+        // Player clocks are driven by the official gameplay containers only while visible;
+        // everywhere else this session pumps them so spectating follows live progress.
+        private bool gameplayVisible;
+
         private HashSet<int> providerUserIds = new HashSet<int>();
         private TournamentLeaderboardProvider? leaderboardProvider;
         private bool leaderboardLoaded;
@@ -225,6 +230,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             redCells = red;
             blueCells = blue;
         }
+
+        /// <summary>
+        /// Tracks whether the gameplay visuals are shown. Must follow GameplayScreen Show/Hide:
+        /// hiding only fades the screen out, so drawables keep reporting present while frozen.
+        /// </summary>
+        public void SetGameplayVisible(bool visible) => gameplayVisible = visible;
 
         /// <summary>
         /// Recomputes slot assignment, labels, watches and score provider.
@@ -997,10 +1008,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         /// <summary>
-        /// Advances player clocks while the gameplay visuals are hidden.
+        /// Advances player clocks that the official gameplay containers are not driving.
         /// Hidden subtrees skip updates (see CompositeDrawable.UpdateSubTree), which would freeze
-        /// player clocks against the real-time master track and force a 2x catch-up on return.
-        /// While visible, each TournamentSpectatorPlayer's GameplayClockContainer already pumps
+        /// player clocks against the real-time master track: the master would stall as too far ahead
+        /// and everything would resume from the frozen point on return instead of live progress.
+        /// While visible, each loaded TournamentSpectatorPlayer's GameplayClockContainer already pumps
         /// its SpectatorPlayerClock once per frame via FramedClock.ProcessFrame, so pumping here
         /// as well would double-advance catch-up (the stopped-master branch in
         /// SpectatorPlayerClock.ProcessFrame has no same-frame guard).
@@ -1010,8 +1022,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             foreach (var (userId, clock) in clocksByUser.ToList())
             {
                 // The official container is driving this clock; do not pump a second time.
-                if (cellsByUser.TryGetValue(userId, out SpectateCell? cell) && cell.PlayArea?.IsPresent == true)
+                if (gameplayVisible
+                    && cellsByUser.TryGetValue(userId, out SpectateCell? cell)
+                    && cell.PlayArea?.PlayerLoaded == true)
                     continue;
+
+                // While hidden, frame arrival does not refresh the player's waiting flag
+                // (it is recomputed in the player's UpdateAfterChildren). Refresh from received
+                // frames so a stale wait does not freeze the clock: a spuriously running clock
+                // parks ahead harmlessly and re-syncs on its own.
+                if (!gameplayVisible && scoresByUser.TryGetValue(userId, out Score? waitingScore))
+                    clock.WaitingOnFrames = waitingScore.Replay.Frames.Count == 0;
 
                 clock.ProcessFrame();
             }

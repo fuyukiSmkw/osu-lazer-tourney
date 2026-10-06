@@ -400,12 +400,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         public override void Hide()
         {
             scheduledScreenChange?.Cancel();
+            spectateSession.SetGameplayVisible(false);
             base.Hide();
         }
 
         public override void Show()
         {
             updateState();
+            spectateSession.SetGameplayVisible(true);
             base.Show();
         }
     }
