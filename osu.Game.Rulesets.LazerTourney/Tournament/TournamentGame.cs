@@ -9,6 +9,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Input.Handlers.Mouse;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
+using osu.Framework.Testing;
 using osu.Game.Graphics.Cursor;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
@@ -37,12 +38,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private GameHost? host;
 
+        [Resolved]
+        private OsuGame game { get; set; } = null!;
+        private NotificationOverlayToastTray? toastTray;
+        private float originalToastTrayWidth;
+        private bool toastTrayNarrowed;
+
         public override void ExitTournament()
         {
             // Restore OS cursor hiding (set by OsuGame at startup); lazer cursor
             // visibility is restored automatically via CursorVisible.
             if (host?.Window != null)
                 host.Window.CursorState |= CursorState.Hidden;
+
+            restoreToastTray();
 
             base.ExitTournament();
         }
@@ -137,6 +146,43 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                     OverlayActivationMode.Value = OverlayActivation.UserTriggered; // hide toolbar
                 });
             }));
+        }
+
+        protected override void LoadComplete()
+        {
+            base.LoadComplete();
+            narrowToastTray();
+        }
+
+        /// <summary>
+        /// Narrows the notification toast column while the tournament client is active so popups
+        /// never cover the stream area. Only the toast tray is narrowed: shrinking the overlay itself
+        /// would detach it from the screen edge while hidden, at which point the framework freezes
+        /// its whole subtree as masked-away. Must run on the update thread.
+        /// </summary>
+        private void narrowToastTray()
+        {
+            if (game == null || toastTrayNarrowed)
+                return;
+
+            toastTray = game.ChildrenOfType<NotificationOverlayToastTray>().FirstOrDefault();
+
+            if (toastTray == null)
+                return;
+
+            originalToastTrayWidth = toastTray.Width;
+            // The tray is relatively sized, so the width is fractional against the overlay width.
+            toastTray.Width = TournamentSceneManager.CONTROL_PANEL_WIDTH / NotificationOverlay.WIDTH;
+            toastTrayNarrowed = true;
+        }
+
+        private void restoreToastTray()
+        {
+            if (!toastTrayNarrowed || toastTray == null)
+                return;
+
+            toastTrayNarrowed = false;
+            toastTray.Width = originalToastTrayWidth;
         }
     }
 }
