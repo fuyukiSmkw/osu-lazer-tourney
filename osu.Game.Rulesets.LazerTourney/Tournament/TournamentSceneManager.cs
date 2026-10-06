@@ -15,6 +15,7 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens;
+using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Countdown;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Drawings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay;
@@ -78,6 +79,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         [Cached]
         private readonly ChatTimerService chatTimerService = new ChatTimerService();
+
+        /// <summary>
+        /// Shared standby countdown for the countdown screen.
+        /// Hosted here (rather than inside <see cref="Screens.Countdown.CountdownScreen"/>)
+        /// so it keeps running while other screens are shown: hidden screens skip updates.
+        /// </summary>
+        [Cached]
+        private readonly CountdownTimerService countdownTimer = new CountdownTimerService();
 
         /// <summary>
         /// Match-start countdown tick sounds. Hosted here so they play exactly once
@@ -147,6 +156,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                                 new DrawingsScreen(),
                                 new GameplayScreen(),
                                 new TeamWinScreen(),
+                                new CountdownScreen(),
                             }
                         },
                         chatContainer = new Container
@@ -182,6 +192,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                                 new ScreenButton(typeof(RoundEditorScreen)) { Text = "Rounds Editor", RequestSelection = SetScreen },
                                 new ScreenButton(typeof(LadderEditorScreen)) { Text = "Bracket Editor", RequestSelection = SetScreen },
                                 new Separator(),
+                                new ScreenButton(typeof(CountdownScreen), Key.C) { Text = "Countdown", RequestSelection = SetScreen },
                                 new ScreenButton(typeof(ScheduleScreen), Key.S) { Text = "Schedule", RequestSelection = SetScreen },
                                 new ScreenButton(typeof(LadderScreen), Key.B) { Text = "Bracket", RequestSelection = SetScreen },
                                 new Separator(),
@@ -202,6 +213,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 musicController,
                 spectateSession,
                 chatTimerService,
+                countdownTimer,
                 countdownSounds,
             };
 

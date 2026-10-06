@@ -63,7 +63,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             if (panelHolder != null)
             {
-                panelHolder.Child = new TournamentBeatmapPanel(beatmap, poolMatch?.Mods ?? string.Empty, poolMatch)
+                // Keep the reference locally: re-reading Child right after setting it
+                // can observe an empty container on some load paths.
+                var panel = new TournamentBeatmapPanel(beatmap, poolMatch?.Mods ?? string.Empty, poolMatch)
                 {
                     RelativeSizeAxes = Axes.X,
                     Width = 1.0f,
@@ -72,8 +74,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     Origin = Anchor.BottomRight,
                 };
 
-                if (panelHolder.Child is TournamentBeatmapPanel panel)
-                    panel.SetRequiredMods(requiredMods.ToArray());
+                panelHolder.Child = panel;
+                panel.SetRequiredMods(requiredMods.ToArray());
             }
 
             updateStarRating();
