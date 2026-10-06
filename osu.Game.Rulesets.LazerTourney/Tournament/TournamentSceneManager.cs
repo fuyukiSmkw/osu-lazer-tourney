@@ -308,6 +308,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 BackgroundColour = OsuColour.Gray(0.2f);
                 Action = () => RequestSelection?.Invoke(type);
 
+                // Shrink for extra buttons
+                Height = 36;
+                SpriteText.Font = SpriteText.Font.With(size: 14);
+
                 RelativeSizeAxes = Axes.X;
 
                 if (shortcutKey != null)
