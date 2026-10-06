@@ -15,6 +15,7 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens;
+using osu.Game.Rulesets.LazerTourney.Tournament.Screens.About;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Countdown;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Drawings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors;
@@ -157,6 +158,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                                 new GameplayScreen(),
                                 new TeamWinScreen(),
                                 new CountdownScreen(),
+                                new AboutScreen(),
                             }
                         },
                         chatContainer = new Container
@@ -206,6 +208,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                                 new Separator(),
                                 new ScreenButton(typeof(DrawingsScreen)) { Text = "Drawings", RequestSelection = SetScreen },
                                 new ScreenButton(typeof(ShowcaseScreen)) { Text = "Showcase", RequestSelection = SetScreen },
+                                new Separator(),
+                                new ScreenButton(typeof(AboutScreen)) { Text = "About", RequestSelection = SetScreen },
                             }
                         },
                     }
@@ -301,7 +305,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             public Separator()
             {
                 RelativeSizeAxes = Axes.X;
-                Height = 20;
+                Height = 15;
             }
         }
 
