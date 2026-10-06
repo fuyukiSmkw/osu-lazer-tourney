@@ -34,5 +34,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
     {
         Pick,
         Ban,
+        Protect,
     }
 }

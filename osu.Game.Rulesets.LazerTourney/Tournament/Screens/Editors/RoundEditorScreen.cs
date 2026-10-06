@@ -124,6 +124,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             },
                             new SettingsSlider<int>
                             {
+                                LabelText = "# of Protects",
+                                Width = 0.33f,
+                                Current = Model.ProtectCount
+                            },
+                            new SettingsSlider<int>
+                            {
                                 LabelText = "Best of",
                                 Width = 0.33f,
                                 Current = Model.BestOf

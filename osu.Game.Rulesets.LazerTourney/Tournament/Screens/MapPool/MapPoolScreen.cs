@@ -49,6 +49,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
         private OsuButton buttonBlueBan = null!;
         private OsuButton buttonRedPick = null!;
         private OsuButton buttonBluePick = null!;
+        private OsuButton buttonRedProtect = null!;
+        private OsuButton buttonBlueProtect = null!;
 
         private ScheduledDelegate? scheduledScreenChange;
 
@@ -105,6 +107,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                             RelativeSizeAxes = Axes.X,
                             Text = "Blue Pick",
                             Action = () => setMode(TeamColour.Blue, ChoiceType.Pick)
+                        },
+                        buttonRedProtect = new TourneyButton
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            Text = "Red Protect",
+                            Action = () => setMode(TeamColour.Red, ChoiceType.Protect)
+                        },
+                        buttonBlueProtect = new TourneyButton
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            Text = "Blue Protect",
+                            Action = () => setMode(TeamColour.Blue, ChoiceType.Protect)
                         },
                         new ControlPanel.Spacer(),
                         new TourneyButton
@@ -182,6 +196,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
             buttonBlueBan.Colour = setColour(pickColour == TeamColour.Blue && pickType == ChoiceType.Ban);
             buttonRedPick.Colour = setColour(pickColour == TeamColour.Red && pickType == ChoiceType.Pick);
             buttonBluePick.Colour = setColour(pickColour == TeamColour.Blue && pickType == ChoiceType.Pick);
+            buttonRedProtect.Colour = setColour(pickColour == TeamColour.Red && pickType == ChoiceType.Protect);
+            buttonBlueProtect.Colour = setColour(pickColour == TeamColour.Blue && pickType == ChoiceType.Protect);
 
             static Color4 setColour(bool active) => active ? Color4.White : Color4.Gray;
         }
@@ -191,30 +207,42 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
             if (CurrentMatch.Value?.Round.Value == null)
                 return;
 
-            int totalBansRequired = CurrentMatch.Value.Round.Value.BanCount.Value * 2;
+            var match = CurrentMatch.Value;
 
-            TeamColour lastPickColour = CurrentMatch.Value.PicksBans.LastOrDefault()?.Team ?? TeamColour.Red;
+            int totalProtectsRequired = match.Round.Value.ProtectCount.Value * 2;
+            int totalBansRequired = match.Round.Value.BanCount.Value * 2;
+
+            int protectCount = match.PicksBans.Count(p => p.Type == ChoiceType.Protect);
+            int banCount = match.PicksBans.Count(p => p.Type == ChoiceType.Ban);
 
             TeamColour nextColour;
+            ChoiceType nextType;
 
-            bool hasAllBans = CurrentMatch.Value.PicksBans.Count(p => p.Type == ChoiceType.Ban) >= totalBansRequired;
-
-            if (!hasAllBans)
+            if (protectCount < totalProtectsRequired)
             {
-                // Ban phase: switch teams every second ban.
-                nextColour = CurrentMatch.Value.PicksBans.Count % 2 == 1
-                    ? getOppositeTeamColour(lastPickColour)
-                    : lastPickColour;
+                // Protect phase: ABBA order, counted within the phase.
+                TeamColour lastProtectColour = match.PicksBans.LastOrDefault(p => p.Type == ChoiceType.Protect)?.Team ?? TeamColour.Red;
+                nextColour = protectCount % 2 == 1 ? getOppositeTeamColour(lastProtectColour) : lastProtectColour;
+                nextType = ChoiceType.Protect;
+            }
+            else if (banCount < totalBansRequired)
+            {
+                // Ban phase: ABBA order, counted within the phase.
+                TeamColour lastBanColour = match.PicksBans.LastOrDefault(p => p.Type == ChoiceType.Ban)?.Team ?? TeamColour.Red;
+                nextColour = banCount % 2 == 1 ? getOppositeTeamColour(lastBanColour) : lastBanColour;
+                nextType = ChoiceType.Ban;
             }
             else
             {
                 // Pick phase : switch teams every pick, except for the first pick which generally goes to the team that placed the last ban.
+                TeamColour lastPickColour = match.PicksBans.LastOrDefault()?.Team ?? TeamColour.Red;
                 nextColour = pickType == ChoiceType.Pick
                     ? getOppositeTeamColour(lastPickColour)
                     : lastPickColour;
+                nextType = ChoiceType.Pick;
             }
 
-            setMode(nextColour, hasAllBans ? ChoiceType.Pick : ChoiceType.Ban);
+            setMode(nextColour, nextType);
 
             TeamColour getOppositeTeamColour(TeamColour colour) => colour == TeamColour.Red ? TeamColour.Blue : TeamColour.Red;
         }
@@ -229,19 +257,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                 if (e.Button == MouseButton.Left && map.Beatmap?.OnlineID > 0)
                 {
                     // Referees (host or referee role) also push the map to the room's current item.
-                    // Local pick/ban bookkeeping below runs for everyone.
-                    if (map.RoundMap != null)
+                    // Local pick/ban/protect bookkeeping below runs for everyone.
+                    // Refused choices (e.g. banning a protected map) push nothing.
+                    if (map.RoundMap != null && choiceAllowed(map.Beatmap.OnlineID))
                         applyToRoom(map.RoundMap);
 
                     addForBeatmap(map.Beatmap.OnlineID);
                 }
                 else
                 {
-                    var existing = CurrentMatch.Value?.PicksBans.FirstOrDefault(p => p.BeatmapID == map.Beatmap?.OnlineID);
+                    var existing = CurrentMatch.Value?.PicksBans.Where(p => p.BeatmapID == map.Beatmap?.OnlineID).ToList();
 
-                    if (existing != null)
+                    if (existing != null && existing.Count > 0)
                     {
-                        CurrentMatch.Value?.PicksBans.Remove(existing);
+                        // Right-click clears every choice on the map (protect and pick alike).
+                        foreach (var choice in existing)
+                            CurrentMatch.Value?.PicksBans.Remove(choice);
+
                         setNextMode();
                     }
                 }
@@ -250,6 +282,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
             }
 
             return base.OnMouseDown(e);
+        }
+
+        /// <summary>
+        /// Whether the current mode may act on the given map: protected maps cannot be banned,
+        /// picks on them coexist with the protect, and no map takes two protects, bans or picks.
+        /// </summary>
+        private bool choiceAllowed(int beatmapId)
+        {
+            var choices = CurrentMatch.Value?.PicksBans.Where(p => p.BeatmapID == beatmapId).ToList();
+
+            if (choices == null || choices.Count == 0)
+                return true;
+
+            // Picking a protected map keeps the protect and adds a pick (either team may do so).
+            return pickType == ChoiceType.Pick && choices.All(p => p.Type == ChoiceType.Protect);
         }
 
         /// <summary>
@@ -336,9 +383,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                 // don't attempt to add if the beatmap isn't in our pool
                 return;
 
-            if (CurrentMatch.Value.PicksBans.Any(p => p.BeatmapID == beatmapId))
-                // don't attempt to add if already exists.
+            var choices = CurrentMatch.Value.PicksBans.Where(p => p.BeatmapID == beatmapId).ToList();
+
+            if (pickType == ChoiceType.Pick)
+            {
+                // A protected map keeps its protect record and gains a pick entry.
+                if (choices.Any(p => p.Type != ChoiceType.Protect))
+                    return;
+            }
+            else if (choices.Count > 0)
+            {
+                // don't attempt to add if already chosen (this also refuses bans on
+                // protected maps and double protects by either team).
                 return;
+            }
 
             CurrentMatch.Value.PicksBans.Add(new BeatmapChoice
             {
