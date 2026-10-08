@@ -216,6 +216,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                 ApiRoom = new Room(room);
             }
 
+            // Project live membership into the cached API room. The room header panel
+            // (official MultiplayerRoomPanel) reads ParticipantCount/RecentParticipants
+            // off this object via PropertyChanged; without this it keeps showing the
+            // join-time snapshot. Mirrors the lounge listing which refreshes the same fields.
+            if (ApiRoom != null)
+            {
+                ApiRoom.ParticipantCount = room.Users.Count;
+                ApiRoom.RecentParticipants = room.Users.Select(u => u.User).Where(u => u != null).ToArray()!;
+            }
+
             // Keep the local user spectating while joined, matching the official
             // lounge -> room flow where the tournament client never participates.
             // Only Idle/Ready can transition to Spectating (see MultiplayerClient.ToggleSpectate).
