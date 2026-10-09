@@ -128,6 +128,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             visualAudioSettings = new VisualAudioSettingsController();
             // Must be added to the hierarchy, otherwise dependency injection never runs.
             AddInternal(visualAudioSettings);
+
+            var refereeAuth = new RefereeAuthController();
+            dependencies.Cache(refereeAuth);
+            // Must be added to the hierarchy, otherwise dependency injection never runs.
+            AddInternal(refereeAuth);
             var ongoingOperationTracker = new OngoingOperationTracker();
             dependencies.Cache(ongoingOperationTracker);
             AddInternal(ongoingOperationTracker);

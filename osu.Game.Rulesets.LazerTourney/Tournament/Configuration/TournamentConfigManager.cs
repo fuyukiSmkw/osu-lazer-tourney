@@ -22,11 +22,41 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
             base.InitialiseDefaults();
 
             SetDefault(StorageConfig.CurrentTournament, default_tournament);
+            SetDefault(StorageConfig.RefereeClientId, string.Empty);
+            SetDefault(StorageConfig.RefereeClientSecret, string.Empty);
+            SetDefault(StorageConfig.RefereeAccessToken, string.Empty);
+            SetDefault(StorageConfig.RefereeRefreshToken, string.Empty);
+            SetDefault(StorageConfig.RefereeExpiresAt, 0L);
         }
     }
 
     public enum StorageConfig
     {
         CurrentTournament,
+
+        /// <summary>
+        /// OAuth client ID for the referee hub API. One user, one client.
+        /// </summary>
+        RefereeClientId,
+
+        /// <summary>
+        /// OAuth client secret for the referee hub API. One user, one client.
+        /// </summary>
+        RefereeClientSecret,
+
+        /// <summary>
+        /// Referee hub API access token. Represents the user, never shared.
+        /// </summary>
+        RefereeAccessToken,
+
+        /// <summary>
+        /// Referee hub API refresh token. Represents the user, never shared.
+        /// </summary>
+        RefereeRefreshToken,
+
+        /// <summary>
+        /// Referee hub API access token expiry as unix seconds.
+        /// </summary>
+        RefereeExpiresAt,
     }
 }

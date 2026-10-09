@@ -12,10 +12,12 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
+using osu.Framework.Threading;
 using osu.Game.Configuration;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
+using osu.Game.Graphics.UserInterface;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
@@ -23,6 +25,7 @@ using osu.Game.Online.Multiplayer;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Overlays.Settings;
+using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.Scoring;
 using osuTK;
@@ -49,6 +52,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         [Resolved]
         private TournamentOnlineState onlineState { get; set; } = null!;
+
+        [Resolved]
+        private TournamentStorage tournamentStorage { get; set; } = null!;
+
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
 
         [Resolved]
         private SaveChangesOverlay saveChanges { get; set; } = null!;
@@ -127,91 +136,136 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         {
             bool inRoom = onlineState.RoomJoined.Value;
 
-            var children = new List<Drawable>
+            var left = new List<Drawable>(coreSettingsSection(inRoom));
+            left.AddRange(refereeApiSection());
+
+            var right = new List<Drawable>(visualAudioSettingsSection());
+
+            fillFlow.Children = new Drawable[]
             {
-                new ActionableInfo
+                new GridContainer
                 {
-                    Label = "Current user",
-                    ButtonText = "Change sign-in",
-                    Action = () =>
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    ColumnDimensions = new[]
                     {
-                        api.Logout();
-
-                        if (loginOverlay == null)
-                        {
-                            AddInternal(loginOverlay = new LoginOverlay
-                            {
-                                Anchor = Anchor.TopRight,
-                                Origin = Anchor.TopRight,
-                            });
-                        }
-
-                        loginOverlay.State.Value = Visibility.Visible;
+                        new Dimension(),
+                        new Dimension(),
                     },
-                    Value = api.LocalUser.Value.Username,
-                    Failing = api.IsLoggedIn != true,
-                    Description = "In order to access the API and display metadata, signing in is required."
+                    RowDimensions = new[]
+                    {
+                        new Dimension(GridSizeMode.AutoSize),
+                    },
+                    Content = new[]
+                    {
+                        new Drawable[]
+                        {
+                            columnFlow(left),
+                            columnFlow(right),
+                        },
+                    },
                 },
-                new LabelledDropdown<RulesetInfo?>(padded: true)
-                {
-                    Label = "Ruleset",
-                    Description = "Decides what stats are displayed and which ranks are retrieved for players. This requires a restart to reload data for an existing bracket.",
-                    Items = rulesets.AvailableRulesets,
-                    Current = LadderInfo.Ruleset,
-                    DropdownWidth = 0.5f,
-                },
-                new TournamentSwitcher
-                {
-                    Label = "Current tournament",
-                    Description = "Changes the background videos and bracket to match the selected tournament. This requires a restart to apply changes.",
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Auto advance screens",
-                    Description = "Screens will progress automatically from gameplay -> results -> map pool",
-                    Current = LadderInfo.AutoProgressScreens,
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Display team seeds",
-                    Description = "Team seeds will display alongside each team at the top in gameplay/map pool screens.",
-                    Current = LadderInfo.DisplayTeamSeeds,
-                },
-                new ActionableInfo
-                {
-                    Label = "Multiplayer room",
-                    ButtonText = inRoom ? "Manage" : "Select room",
-                    Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
-                    Value = inRoom ? onlineState.RoomName.Value : "Not joined",
-                    Failing = !inRoom,
-                    Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
-                },
-                new ResolutionSelector
-                {
-                    Label = "Display height",
-                    ButtonText = "Apply",
-                    Action = applyResolution,
-                    Description = "Sets the window height and the minimum required width for the tournament layout."
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Automatically download missing beatmaps",
-                    Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
-                    Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
-                },
-                new ActionableInfo
-                {
-                    Label = "Quit lazer!tourney",
-                    ButtonText = quitArmed ? "Click again to quit" : "Quit",
-                    ButtonColour = colours.Red3,
-                    Action = onQuitPressed,
-                }
+            };
+        }
+
+        private static FillFlowContainer columnFlow(List<Drawable> children) => new FillFlowContainer
+        {
+            RelativeSizeAxes = Axes.X,
+            AutoSizeAxes = Axes.Y,
+            Direction = FillDirection.Vertical,
+            Padding = new MarginPadding(20),
+            Spacing = new Vector2(10),
+            Children = children,
+        };
+
+        /// <summary>
+        /// Builds the core tournament setup section, including the quit button.
+        /// </summary>
+        private IEnumerable<Drawable> coreSettingsSection(bool inRoom)
+        {
+            yield return new OsuSpriteText
+            {
+                Text = "General settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
             };
 
-            // Visual & audio settings go right before the quit button.
-            children.InsertRange(children.Count - 1, visualAudioSettingsSection());
+            yield return new ActionableInfo
+            {
+                Label = "Current user",
+                ButtonText = "Change sign-in",
+                Action = () =>
+                {
+                    api.Logout();
 
-            fillFlow.Children = children.ToArray();
+                    if (loginOverlay == null)
+                    {
+                        AddInternal(loginOverlay = new LoginOverlay
+                        {
+                            Anchor = Anchor.TopRight,
+                            Origin = Anchor.TopRight,
+                        });
+                    }
+
+                    loginOverlay.State.Value = Visibility.Visible;
+                },
+                Value = api.LocalUser.Value.Username,
+                Failing = api.IsLoggedIn != true,
+                Description = "In order to access the API and display metadata, signing in is required."
+            };
+            yield return new TournamentSwitcher
+            {
+                Label = "",
+                Description = "Current tournament. This requires a restart to apply changes.",
+            };
+            yield return new LabelledDropdown<RulesetInfo?>(padded: true)
+            {
+                Label = "Ruleset",
+                Description = "Decides what stats are displayed and which ranks are retrieved for players. This requires a restart to reload data for an existing bracket.",
+                Items = rulesets.AvailableRulesets,
+                Current = LadderInfo.Ruleset,
+                DropdownWidth = 0.5f,
+            };
+            yield return new ResolutionSelector
+            {
+                Label = "Window height",
+                ButtonText = "Apply",
+                Action = applyResolution,
+                Description = "Sets the window height and the minimum required width for the tournament layout."
+            };
+            yield return new ActionableInfo
+            {
+                Label = "Multiplayer room",
+                ButtonText = inRoom ? "Manage" : "Select room",
+                Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
+                Value = inRoom ? onlineState.RoomName.Value : "Not joined",
+                Failing = !inRoom,
+                Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Auto advance screens",
+                Description = "Screens will progress automatically from gameplay -> results -> map pool",
+                Current = LadderInfo.AutoProgressScreens,
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Display team seeds",
+                Description = "Team seeds will display alongside each team at the top in gameplay/map pool screens.",
+                Current = LadderInfo.DisplayTeamSeeds,
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Automatically download missing beatmaps",
+                Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
+                Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
+            };
+            yield return new ActionableInfo
+            {
+                Label = "Quit lazer!tourney",
+                ButtonText = quitArmed ? "Click again to quit" : "Quit",
+                ButtonColour = colours.Red3,
+                Action = onQuitPressed,
+            };
         }
 
         /// <summary>
@@ -403,6 +457,86 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 Text = text,
                 Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
             };
+        }
+
+        /// <summary>
+        /// Builds the Referee hub API section. Client credentials live in the bracket file;
+        /// access tokens live per tournament in the shared ini file and are never shared.
+        /// </summary>
+        private IEnumerable<Drawable> refereeApiSection()
+        {
+            var statusText = new OsuSpriteText
+            {
+                Font = OsuFont.GetFont(size: 18),
+                Text = refereeAuth.StatusText.Value,
+            };
+
+            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 18))
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+            };
+
+            guide.AddText("Control multiplayer rooms through the referee hub API.\n\n");
+            guide.AddText("1. Create an OAuth application at https://osu.ppy.sh/home/account/edit (Account settings, OAuth section). "); guide.AddArbitraryDrawable(new ExternalLinkButton("https://osu.ppy.sh/home/account/edit#new-oauth-application"));
+            guide.AddText($"\n\n2. Set its Application Callback URL to {RefereeAuthController.CallbackUrl} (Copy callback URL button below).\n\n");
+            guide.AddText("3. Enter the Client ID and Client Secret below.\n\n");
+            guide.AddText("4. Press Authorise and approve in the browser.\n\n");
+            guide.AddText("Note: unless the application is owned by a bot account, only its owner can complete the authorisation. "
+                          + "Credentials and tokens live in tournament-lazer.ini and never leave this machine.");
+
+            yield return new OsuSpriteText
+            {
+                Text = "Referee hub API settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            yield return guide;
+
+            yield return new ActionableInfo
+            {
+                Label = "Callback URL",
+                ButtonText = "Copy URL",
+                Action = refereeAuth.CopyCallbackUrl,
+                Value = RefereeAuthController.CallbackUrl,
+            };
+
+            yield return new LabelledTextBox(padded: true)
+            {
+                Label = "Client ID",
+                Current = tournamentStorage.RefereeClientId,
+            };
+
+            yield return new LabelledTextBox(padded: true)
+            {
+                Label = "Client secret",
+                Current = tournamentStorage.RefereeClientSecret,
+            };
+
+            yield return tokenRow = new ActionableInfo
+            {
+                Label = "Access token",
+                ButtonText = "Authorise",
+                Action = () => refereeAuth.AuthorizeAsync()
+                                          .ContinueWith(_ => Schedule(() => updateTokenRow())),
+                Value = refereeAuth.StatusText.Value,
+                Failing = !refereeAuth.HasValidToken.Value,
+            };
+
+            refereeAuth.RefreshStatusAsync()
+                       .ContinueWith(_ => Schedule(() =>
+                       {
+                           if (!IsDisposed)
+                               updateTokenRow();
+                       }));
+        }
+
+        private ActionableInfo tokenRow = null!;
+
+        private void updateTokenRow()
+        {
+            tokenRow.Value = refereeAuth.StatusText.Value;
+            tokenRow.Failing = !refereeAuth.HasValidToken.Value;
         }
 
         /// <summary>

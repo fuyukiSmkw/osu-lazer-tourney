@@ -54,7 +54,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
             FlowContainer.Insert(-3, dropdown = new OsuDropdown<string>
             {
-                Width = 510
+                Width = 220
             });
 
             return drawable;
