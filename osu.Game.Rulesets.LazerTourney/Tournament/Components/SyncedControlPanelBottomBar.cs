@@ -58,7 +58,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         private readonly Bindable<Channel?> channel = new Bindable<Channel?>();
 
-        private StandAloneChatDisplay.ChatTextBox textBox = null!;
+        private TournamentChatTextBox textBox = null!;
         private TournamentSpriteText countdownText = null!;
 
         private Room? currentRoom;
@@ -106,11 +106,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                 },
                             },
                         },
-                        textBox = new StandAloneChatDisplay.ChatTextBox
+                        textBox = new TournamentChatTextBox
                         {
                             RelativeSizeAxes = Axes.X,
                             Height = 30,
-                            PlaceholderText = ChatStrings.InputPlaceholder,
+                            // PlaceholderText = ChatStrings.InputPlaceholder,
+                            PlaceholderText = "type message...",
                             ReleaseFocusOnCommit = false,
                             // HoldFocus = true,
                         },
@@ -264,7 +265,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             {
                 case "timer":
                     if (!int.TryParse(content, out int timerSeconds) || timerSeconds < 0)
-                        notify("Usage: /timer <number>");
+                        notify("Usage: /timer <number>; 0 to stop");
                     else
                         timerService.StartTimer(timerSeconds, channel.Value);
                     return true;
@@ -362,7 +363,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         /// </summary>
         private partial class TitleContainer : osu.Framework.Graphics.Containers.Container, IHasTooltip
         {
-            public LocalisableString TooltipText => "commands: /timer, /start, /abort";
+            public LocalisableString TooltipText => "commands: /timer, /start, /abort\ntab for username completion";
         }
     }
 }
