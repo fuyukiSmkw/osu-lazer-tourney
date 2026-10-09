@@ -33,6 +33,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             set => Button.Text = value;
         }
 
+        public bool ButtonEnabled
+        {
+            set => Button.Enabled.Value = value;
+        }
+
         public Color4 ButtonColour
         {
             set => Button.BackgroundColour = value;

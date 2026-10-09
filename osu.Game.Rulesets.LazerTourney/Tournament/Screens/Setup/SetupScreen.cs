@@ -517,26 +517,72 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             {
                 Label = "Access token",
                 ButtonText = "Authorise",
-                Action = () => refereeAuth.AuthorizeAsync()
-                                          .ContinueWith(_ => Schedule(() => updateTokenRow())),
+                Action = () =>
+                {
+                    if (refereeAuth.HasValidToken.Value)
+                        refereeAuth.Revoke();
+                    else
+                    {
+                        refereeAuth.AuthorizeAsync()
+                                   .ContinueWith(_ => Schedule(() => updateTokenRow()));
+                    }
+                },
                 Value = refereeAuth.StatusText.Value,
                 Failing = !refereeAuth.HasValidToken.Value,
             };
+
+            yield return connectionRow = new ActionableInfo
+            {
+                Label = "Hub connection",
+                ButtonText = "Connect",
+                Action = () =>
+                {
+                    if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected)
+                        refereeAuth.DisconnectAsync().ContinueWith(_ => { });
+                    else
+                    {
+                        refereeAuth.ConnectAsync().ContinueWith(_ => { });
+                    }
+                },
+                Value = refereeAuth.ConnectionStatusText.Value,
+                ButtonEnabled = refereeAuth.HasValidToken.Value,
+            };
+
+            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateConnectionRow();
+            }));
 
             refereeAuth.RefreshStatusAsync()
                        .ContinueWith(_ => Schedule(() =>
                        {
                            if (!IsDisposed)
+                           {
                                updateTokenRow();
+                               updateConnectionRow();
+                           }
                        }));
         }
 
         private ActionableInfo tokenRow = null!;
+        private ActionableInfo connectionRow = null!;
 
         private void updateTokenRow()
         {
             tokenRow.Value = refereeAuth.StatusText.Value;
             tokenRow.Failing = !refereeAuth.HasValidToken.Value;
+            tokenRow.ButtonText = refereeAuth.HasValidToken.Value ? "Revoke" : "Authorise";
+            updateConnectionRow();
+        }
+
+        private void updateConnectionRow()
+        {
+            connectionRow.Value = refereeAuth.ConnectionStatusText.Value;
+
+            bool connected = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
+            connectionRow.ButtonText = connected ? "Disconnect" : "Connect";
+            connectionRow.ButtonEnabled = connected || refereeAuth.HasValidToken.Value;
         }
 
         /// <summary>

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.SignalR.Client;
 using Newtonsoft.Json.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -13,10 +14,21 @@ using osu.Framework.Graphics;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
 using osu.Game;
+using osu.Game.Online.API;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 {
+    /// <summary>
+    /// Connection state of the referee hub SignalR connection.
+    /// </summary>
+    public enum RefereeConnectionState
+    {
+        Disconnected,
+        Connecting,
+        Connected,
+    }
+
     /// <summary>
     /// OAuth state for the referee hub API (authorization code grant).
     /// One user, one client: credentials and tokens live as plain values in the shared ini file,
@@ -41,6 +53,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 
         [Resolved]
         private TournamentStorage tournamentStorage { get; set; } = null!;
+
+        [Resolved(canBeNull: true)]
+        private IAPIProvider? api { get; set; }
 
         [Resolved(canBeNull: true)]
         private OsuGame? game { get; set; }
@@ -195,11 +210,132 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         /// </summary>
         public void CopyCallbackUrl() => clipboard?.SetText(CallbackUrl);
 
+        /// <summary>
+        /// Clears the stored tokens and drops the hub connection. The client ID and secret stay.
+        /// </summary>
+        public void Revoke() => revokeAndRefreshAsync();
+
+        private async void revokeAndRefreshAsync()
+        {
+            tournamentStorage.RefereeAccessToken = string.Empty;
+            tournamentStorage.RefereeRefreshToken = string.Empty;
+            tournamentStorage.RefereeExpiresAt = 0;
+
+            await DisconnectAsync().ConfigureAwait(false);
+            await RefreshStatusAsync().ConfigureAwait(false);
+        }
+
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
             stopListener();
+            DisconnectAsync().ContinueWith(_ => { });
         }
+
+        #region Referee hub connection
+
+        /// <summary>
+        /// Connection state of the referee hub SignalR connection. Never connected automatically.
+        /// </summary>
+        public readonly Bindable<RefereeConnectionState> ConnectionState = new Bindable<RefereeConnectionState>(RefereeConnectionState.Disconnected);
+
+        /// <summary>
+        /// Human-readable connection state for the settings UI.
+        /// </summary>
+        public readonly Bindable<string> ConnectionStatusText = new Bindable<string>("Not connected.");
+
+        private HubConnection? hubConnection;
+
+        private string refereeHubUrl()
+        {
+            string? baseUrl = api?.Endpoints.SpectatorUrl; // spectator.osu.ppy.sh/spectator
+            string s = "/spectator";
+            if (baseUrl.EndsWith(s))
+                baseUrl = baseUrl.Remove(baseUrl.Length - s.Length);
+            return string.IsNullOrEmpty(baseUrl) ? "/referee" : baseUrl.TrimEnd('/') + "/referee";
+        }
+
+        /// <summary>
+        /// Connects to the referee hub with the stored access token. No-op without a valid token.
+        /// </summary>
+        public async Task ConnectAsync()
+        {
+            if (ConnectionState.Value != RefereeConnectionState.Disconnected || !HasValidToken.Value)
+                return;
+
+            setConnectionState(RefereeConnectionState.Connecting, "Connecting to the referee hub...");
+
+            string url = refereeHubUrl();
+
+            var connection = new HubConnectionBuilder()
+                .WithUrl(url, options => options.AccessTokenProvider = () => Task.FromResult<string?>(tournamentStorage.RefereeAccessToken))
+                .Build();
+
+            connection.Closed += _ =>
+            {
+                Schedule(() => setConnectionState(RefereeConnectionState.Disconnected, "Connection closed by the server."));
+                return Task.CompletedTask;
+            };
+
+            try
+            {
+                await connection.StartAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Referee hub connection failed: {ex.Message}", LoggingTarget.Runtime, LogLevel.Error);
+                Schedule(() => setConnectionState(RefereeConnectionState.Disconnected, $"Connection failed: {ex.Message}"));
+
+                try
+                {
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best effort only.
+                }
+
+                return;
+            }
+
+            hubConnection = connection;
+            Schedule(() => setConnectionState(RefereeConnectionState.Connected, "Connected to the referee hub."));
+        }
+
+        /// <summary>
+        /// Drops the referee hub connection, if any.
+        /// </summary>
+        public async Task DisconnectAsync()
+        {
+            var connection = hubConnection;
+            hubConnection = null;
+
+            if (connection == null)
+            {
+                Schedule(() => setConnectionState(RefereeConnectionState.Disconnected, "Not connected."));
+                return;
+            }
+
+            try
+            {
+                await connection.StopAsync().ConfigureAwait(false);
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Referee hub disconnect failed: {ex.Message}", LoggingTarget.Runtime, LogLevel.Error);
+            }
+
+            Schedule(() => setConnectionState(RefereeConnectionState.Disconnected, "Not connected."));
+        }
+
+        private void setConnectionState(RefereeConnectionState state, string text)
+        {
+            ConnectionState.Value = state;
+            ConnectionStatusText.Value = text;
+        }
+
+        #endregion
 
         private void stopListener()
         {
