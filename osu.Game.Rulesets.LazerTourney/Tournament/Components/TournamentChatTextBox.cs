@@ -90,7 +90,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             {
                 // Command completion: from the start of the string to the caret.
                 // Falls through to username completion when no command matches.
-                string head = Text.Substring(1, end);
+                string head = Text.Substring(1, end - 1);
 
                 if (!head.Contains(' '))
                 {
@@ -99,13 +99,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
                     if (commandMatches.Count == 1)
                     {
-                        replaceRange(0, end, commandMatches[0] + " ", false);
+                        replaceRange(1, end, commandMatches[0] + " ", false);
                         return;
                     }
 
                     if (commandMatches.Count > 1)
                     {
-                        beginPending(commandMatches, 0, end, commandMatches[0]);
+                        beginPending(commandMatches, 1, end, commandMatches[0]);
                         return;
                     }
 
