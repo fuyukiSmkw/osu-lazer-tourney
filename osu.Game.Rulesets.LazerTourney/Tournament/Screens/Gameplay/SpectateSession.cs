@@ -265,6 +265,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 // (slow spectate). Keep showing the current item, including result screens, until
                 // reset or the next LoadRequested starts a new match.
                 Logger.Log("Keeping spectated item while room advanced to next item.", LoggingTarget.Runtime, LogLevel.Verbose);
+
+                // The room moved on: the shared track backing the master clock may be released
+                // at any moment (or already is). Detach first so a later master start (e.g. the
+                // final pass releasing the last managed clock) lands on a virtual track
+                // instead of a disposed one.
+                masterClock?.StopUsingBeatmapClock();
                 return;
             }
 
