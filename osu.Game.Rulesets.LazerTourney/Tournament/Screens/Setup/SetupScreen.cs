@@ -80,8 +80,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// Whether the quit button is armed (first press done, awaiting confirmation press).
         /// Reset when navigating away from this screen.
         /// </summary>
-        private bool quitArmed;
-
+        private readonly BindableBool quitArmed = new();
 
         [BackgroundDependencyLoader]
         private void load()
@@ -123,9 +122,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             base.Hide();
 
             // Leaving this screen cancels a pending quit confirmation.
-            if (quitArmed)
+            if (quitArmed.Value)
             {
-                quitArmed = false;
+                quitArmed.Value = false;
 
                 if (IsLoaded)
                     Schedule(reload);
@@ -259,13 +258,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
                 Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
             };
-            yield return new ActionableInfo
+
+            const string quit_text = "Quit";
+            const string quit_confirmation_text = "Click again to quit";
+
+            var quitButton = new ActionableInfo
             {
                 Label = "Quit lazer!tourney",
-                ButtonText = quitArmed ? "Click again to quit" : "Quit",
+                ButtonText = quit_text,
                 ButtonColour = colours.Red3,
                 Action = onQuitPressed,
             };
+            yield return quitButton;
+
+            quitArmed.BindValueChanged(e =>
+            {
+                if (!e.OldValue)
+                    quitButton?.ButtonText = quit_confirmation_text;
+                else
+                    quitButton?.ButtonText = quit_text;
+            });
         }
 
         /// <summary>
@@ -596,18 +608,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void onQuitPressed() => Schedule(() =>
         {
-            if (!quitArmed)
+            if (!quitArmed.Value)
             {
-                quitArmed = true;
-                reload();
+                quitArmed.Value = true;
+                // reload();
                 return;
             }
 
-            quitArmed = false;
+            quitArmed.Value = false;
 
             if (saveChanges.HasUnsavedChanges)
             {
-                reload();
+                // reload();
                 dialogOverlay.Push(new ConfirmDialog("You have unsaved changes. Quit without saving?", () => sceneManager?.ExitTournament()));
             }
             else
