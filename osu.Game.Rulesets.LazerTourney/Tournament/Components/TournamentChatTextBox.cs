@@ -24,10 +24,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved(canBeNull: true)]
         private MultiplayerClient? multiplayerClient { get; set; }
 
-        private static readonly FieldInfo? selectionStartField =
+        private static readonly FieldInfo? selection_start_field =
             typeof(TextBox).GetField("selectionStart", BindingFlags.Instance | BindingFlags.NonPublic);
 
-        private static readonly FieldInfo? selectionEndField =
+        private static readonly FieldInfo? selection_end_field =
             typeof(TextBox).GetField("selectionEnd", BindingFlags.Instance | BindingFlags.NonPublic);
 
         // Pending multi-candidate completion: candidates stay fixed while cycling,
@@ -36,26 +36,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private int pendingIndex;
         private int pendingStart;
 
-        private int selectionStart => (int?)selectionStartField?.GetValue(this) ?? 0;
-        private int selectionEnd => (int?)selectionEndField?.GetValue(this) ?? 0;
-
-        // Official chat commands plus the tournament custom ones (see channel command handling).
-        private static readonly List<string> chatCommands = new List<string>
-        {
-            "/abort",
-            "/chat",
-            "/help",
-            "/join",
-            "/me",
-            "/msg",
-            "/np",
-            "/query",
-            "/roll",
-            "/savelog",
-            "/start",
-            "/timer",
-            "/watch",
-        };
+        private int selectionStart => (int?)selection_start_field?.GetValue(this) ?? 0;
+        private int selectionEnd => (int?)selection_end_field?.GetValue(this) ?? 0;
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {
@@ -108,12 +90,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             {
                 // Command completion: from the start of the string to the caret.
                 // Falls through to username completion when no command matches.
-                string head = Text.Substring(0, end);
+                string head = Text.Substring(1, end);
 
                 if (!head.Contains(' '))
                 {
                     // A single token right after '/' must be a command name; anything else is meaningless.
-                    var commandMatches = chatCommands.Where(c => c.StartsWith(head, StringComparison.OrdinalIgnoreCase)).ToList();
+                    var commandMatches = SyncedControlPanelBottomBar.COMMANDS.Where(c => c.StartsWith(head, StringComparison.OrdinalIgnoreCase)).ToList();
 
                     if (commandMatches.Count == 1)
                     {

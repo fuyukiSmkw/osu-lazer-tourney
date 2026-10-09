@@ -83,7 +83,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             {
                 cancelInternal();
                 postToChat("Countdown finished");
-                notify("Countdown finished");
+                sendNotificaiton("Countdown finished");
                 return;
             }
 
@@ -112,10 +112,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             channelManager?.PostMessage(text, true, channel);
         }
 
-        private void notify(string text)
+        private void sendNotificaiton(string text)
         {
             if (notifications != null)
-                notifications.Post(new SimpleNotification { Text = text });
+                notifications.Post(new TournamentNotification { Text = text, IsImportant = true });
             else
                 postToChat(text);
         }

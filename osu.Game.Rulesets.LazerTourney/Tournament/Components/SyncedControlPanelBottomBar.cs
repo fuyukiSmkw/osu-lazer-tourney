@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -221,6 +222,29 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             textBox.Current.BindTo(e.NewValue.TextBoxMessage);
         }
 
+        #region Commands
+
+        public static readonly List<string> UNSUPPORTED_COMMANDS =
+        [
+            "join",
+            "chat",
+            "msg",
+            "query",
+            "watch"
+        ];
+
+        public static readonly List<string> COMMANDS =
+        [
+            "help",
+            "abort",
+            "me",
+            "np",
+            "roll",
+            "savelog",
+            "start",
+            "timer"
+        ];
+
         /// <summary>
         /// Sends on commit (Enter) and clears the box. Mirrors <see cref="StandAloneChatDisplay"/> posting.
         /// Clearing propagates through the draft binding, so both screens clear together.
@@ -233,6 +257,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             if (string.IsNullOrWhiteSpace(text))
                 return;
+
+            if (text[0] == '/' && tryInterceptUnsupportedCommand(text.Substring(1)))
+            {
+                textBox.Text = string.Empty;
+                return;
+            }
 
             if (text[0] == '/' && tryHandleCustomCommand(text.Substring(1)))
             {
@@ -249,36 +279,73 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         }
 
         /// <summary>
+        /// Blocks commands whose official handlers would navigate away or otherwise break
+        /// the tournament client. Returns true when blocked (with a notification posted).
+        /// </summary>
+        private bool tryInterceptUnsupportedCommand(string commandText)
+        {
+            string commandName = commandText.Split(' ', 2)[0].ToLowerInvariant();
+
+            if (!UNSUPPORTED_COMMANDS.Contains(commandName))
+                return false;
+
+            notify($"/{commandName} is not supported in lazer!tourney.");
+            return true;
+        }
+
+        /// <summary>
         /// Handles the custom referee commands. Returns false for unknown commands
         /// so the caller falls through to <see cref="ChannelManager.PostCommand"/>.
         /// </summary>
         private bool tryHandleCustomCommand(string commandText)
         {
-            string[] parts = commandText.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            string[] parts = commandText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             if (parts.Length == 0)
-                return false;
+            {
+                notify("Where's your command?");
+                return true;
+            }
 
-            string content = parts.Length == 2 ? parts[1] : string.Empty;
+            bool noArg = parts.Length == 1;
 
             switch (parts[0].ToLowerInvariant())
             {
+                case "help":
+                    if (noArg)
+                    {
+                        string s = "Available commands:";
+                        foreach (string i in COMMANDS)
+                            s += $"\n{usageOfCommand(i)}";
+                        notify(s);
+                    }
+                    else if (parts.Length == 2)
+                    {
+                        string c = parts[1];
+                        if (COMMANDS.Contains(c))
+                            notify($"Usage: {usageOfCommand(c)}\n{helpOfCommand(c)}");
+                        else
+                            notify($"Command /{c} does not exist.");
+                    }
+                    else
+                        notify(usageOfCommand("help"));
+                    return true;
+
                 case "timer":
-                    if (!int.TryParse(content, out int timerSeconds) || timerSeconds < 0)
-                        notify("Usage: /timer <number>; 0 to stop");
+                    if (noArg || !int.TryParse(parts[1], out int timerSeconds) || timerSeconds < 0)
+                        notify(usageOfCommand("timer"));
                     else
                         timerService.StartTimer(timerSeconds, channel.Value);
                     return true;
 
                 case "start":
-                    if (string.IsNullOrEmpty(content))
+                    if (noArg)
                     {
                         startMatch();
                         return true;
                     }
-
-                    if (!int.TryParse(content, out int startSeconds) || startSeconds < 0)
-                        notify("Usage: /start [seconds]");
+                    if (!int.TryParse(parts[1], out int startSeconds) || startSeconds < 0)
+                        notify(usageOfCommand("start"));
                     else if (startSeconds == 0)
                         startMatch();
                     else
@@ -286,12 +353,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     return true;
 
                 case "abort":
-                    if (!string.IsNullOrEmpty(content))
+                    if (!noArg)
                     {
-                        notify("Usage: /abort");
+                        notify(usageOfCommand("abort"));
                         return true;
                     }
-
                     abortMatch();
                     return true;
 
@@ -308,7 +374,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (client.Room == null)
                 return;
 
-            client.StartMatch().FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}"));
+            client.StartMatch().FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
         }
 
         /// <summary>
@@ -320,7 +386,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 return;
 
             client.SendMatchRequest(new StartMatchCountdownRequest { Duration = delay })
-                  .FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}"));
+                  .FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
         }
 
         /// <summary>
@@ -332,16 +398,75 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (client.Room?.State is not MultiplayerRoomState.WaitingForLoad and not MultiplayerRoomState.Playing)
                 return;
 
-            client.AbortMatch().FireAndForget(onError: ex => notify($"Failed to abort match: {ex.Message}"));
+            client.AbortMatch().FireAndForget(onError: ex => notify($"Failed to abort match: {ex.Message}", true));
         }
 
-        private void notify(string text)
+        private void notify(string text, bool important = false)
         {
             if (notifications != null)
-                notifications.Post(new SimpleNotification { Text = text });
+            {
+                if (important)
+                    notifications.Post(new TournamentNotification { Text = text, IsImportant = true });
+                else
+                    notifications.Post(new TournamentNotification { Text = text, Transient = true });
+            }
             else
                 channel.Value?.AddNewMessages(new ErrorMessage(text));
         }
+
+        #endregion Commands
+
+        #region Help for commands
+
+        private string usageOfCommand(string cmd)
+        {
+            switch (cmd)
+            {
+                case "help":
+                    return "/help [command]";
+                case "abort":
+                    return "/abort";
+                case "me":
+                    return "/me <message>";
+                case "np":
+                    return "/np";
+                case "roll":
+                    return "/roll [2~100]";
+                case "savelog":
+                    return "/savelog";
+                case "start":
+                    return "/start [number]";
+                case "timer":
+                    return "/timer <number>";
+            }
+            return null;
+        }
+
+        private string helpOfCommand(string cmd)
+        {
+            switch (cmd)
+            {
+                case "help":
+                    return "Show the list of all commands or help for a certain command";
+                case "abort":
+                    return "Abort the ongoing match.";
+                case "me":
+                    return "Send an action message.";
+                case "np":
+                    return "Print to chat the current song you are listening to.";
+                case "roll":
+                    return "Rolls a random number.";
+                case "savelog":
+                    return "Saves the current chat tab to a text file.";
+                case "start":
+                    return "Start match immediately or in specific seconds.";
+                case "timer":
+                    return "Start a local timer that sends message every 30 seconds or at the last few seconds.\nWill notify you when the timer ends.\n/start 0 to stop the current timer.";
+            }
+            return null;
+        }
+
+        #endregion
 
         protected override void Dispose(bool isDisposing)
         {
@@ -363,7 +488,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         /// </summary>
         private partial class TitleContainer : osu.Framework.Graphics.Containers.Container, IHasTooltip
         {
-            public LocalisableString TooltipText => "commands: /timer, /start, /abort\ntab for username completion";
+            public LocalisableString TooltipText => "/help for a list of commands\ntab for username completion";
         }
     }
 }
