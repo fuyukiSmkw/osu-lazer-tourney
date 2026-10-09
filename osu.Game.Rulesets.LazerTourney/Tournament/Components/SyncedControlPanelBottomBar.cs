@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -237,6 +238,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [
             "help",
             "abort",
+            "kick",
             "me",
             "np",
             "roll",
@@ -361,6 +363,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     abortMatch();
                     return true;
 
+                case "kick":
+                    if (noArg)
+                        notify(usageOfCommand("kick"));
+                    else
+                        kickUser(string.Join(' ', parts.Skip(1)));
+                    return true;
+
                 default:
                     return false;
             }
@@ -374,6 +383,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (client.Room == null)
                 return;
 
+            if (!isPriviledged())
+            {
+                notify("You don't have permission to start.");
+                return;
+            }
+
             client.StartMatch().FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
         }
 
@@ -385,8 +400,45 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (client.Room == null)
                 return;
 
+            if (!isPriviledged())
+            {
+                notify("You don't have permission to start.");
+                return;
+            }
+
             client.SendMatchRequest(new StartMatchCountdownRequest { Duration = delay })
                   .FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
+        }
+
+        /// <summary>
+        /// Kicks a room user by username. Mirrors the participant list kick button,
+        /// plus a chat message announcing the kick.
+        /// </summary>
+        private void kickUser(string username)
+        {
+            var room = client.Room;
+
+            if (room == null)
+                return;
+
+            if (!isPriviledged())
+            {
+                notify("You don't have permission to kick users.");
+                return;
+            }
+
+            var target = room.Users.FirstOrDefault(u => string.Equals(u.User?.Username, username, StringComparison.OrdinalIgnoreCase));
+
+            if (target == null)
+            {
+                notify($"User {username} does not exist or is not in the room.");
+                return;
+            }
+
+            client.KickUser(target.UserID).FireAndForget(
+                onSuccess: () => channelManager?.PostMessage($"Kicked {target.User?.Username}", target: channel.Value),
+                onError: ex => notify($"Failed to kick {username}: {ex.Message}", true));
+
         }
 
         /// <summary>
@@ -396,10 +448,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private void abortMatch()
         {
             if (client.Room?.State is not MultiplayerRoomState.WaitingForLoad and not MultiplayerRoomState.Playing)
+            {
+                notify("No ongoing match.");
                 return;
+            }
+
+            if (!isPriviledged())
+            {
+                notify("You don't have permission to abort.");
+                return;
+            }
 
             client.AbortMatch().FireAndForget(onError: ex => notify($"Failed to abort match: {ex.Message}", true));
         }
+
+        private bool isPriviledged() => client.IsHost || client.IsReferee;
 
         private void notify(string text, bool important = false)
         {
@@ -426,6 +489,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     return "/help [command]";
                 case "abort":
                     return "/abort";
+                case "kick":
+                    return "/kick <username>";
                 case "me":
                     return "/me <message>";
                 case "np":
@@ -450,6 +515,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     return "Show the list of all commands or help for a certain command";
                 case "abort":
                     return "Abort the ongoing match.";
+                case "kick":
+                    return "Kick a user from the room by username.";
                 case "me":
                     return "Send an action message.";
                 case "np":
