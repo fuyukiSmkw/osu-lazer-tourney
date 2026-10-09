@@ -8,7 +8,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
 {
     public class TournamentConfigManager : IniConfigManager<StorageConfig>
     {
-        protected override string Filename => "tournament.ini";
+        protected override string Filename => "tournament-lazer.ini";
 
         private const string default_tournament = "default";
 
