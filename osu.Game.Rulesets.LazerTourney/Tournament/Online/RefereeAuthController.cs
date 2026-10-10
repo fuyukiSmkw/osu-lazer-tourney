@@ -14,7 +14,6 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
-using osu.Game;
 using osu.Game.Online.API;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online.Referee;
@@ -279,6 +278,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                 return Task.CompletedTask;
             };
 
+            connection.On<string>("Pong", message => Schedule(() => PongReceived?.Invoke(message)));
+
             try
             {
                 await connection.StartAsync().ConfigureAwait(false);
@@ -384,6 +385,88 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             await RefreshStatusAsync().ConfigureAwait(false);
 
             await connection.InvokeAsync("ChangeRoomSettings", roomId, request, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Fired when the server answers a <c>Ping</c> invocation with a <c>Pong</c> event.
+        /// </summary>
+        public event Action<string>? PongReceived;
+
+        /// <summary>
+        /// Sends a textual message to the server, which answers with a <c>Pong</c> event.
+        /// </summary>
+        public async Task PingAsync(string message, CancellationToken cancellationToken = default)
+        {
+            var connection = hubConnection;
+
+            if (connection == null || ConnectionState.Value != RefereeConnectionState.Connected)
+                throw new InvalidOperationException("Not connected to the referee hub.");
+
+            await RefreshStatusAsync().ConfigureAwait(false);
+
+            await connection.InvokeAsync("Ping", message, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Invites a player to a room managed via the referee hub.
+        /// </summary>
+        public Task InvitePlayerAsync(long roomId, int userId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("InvitePlayer", cancellationToken, roomId, userId);
+
+        /// <summary>
+        /// Kicks a player from a room managed via the referee hub.
+        /// </summary>
+        public Task KickPlayerAsync(long roomId, int userId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("KickPlayer", cancellationToken, roomId, userId);
+
+        /// <summary>
+        /// Bans a user from a room managed via the referee hub.
+        /// </summary>
+        public Task BanUserAsync(long roomId, int userId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("BanUser", cancellationToken, roomId, userId);
+
+        /// <summary>
+        /// Adds a user as a referee of a room managed via the referee hub.
+        /// Only the room host can do this.
+        /// </summary>
+        public Task AddRefereeAsync(long roomId, int userId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("AddReferee", cancellationToken, roomId, userId);
+
+        /// <summary>
+        /// Removes a user from the referees of a room managed via the referee hub.
+        /// Only the room host can do this.
+        /// </summary>
+        public Task RemoveRefereeAsync(long roomId, int userId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("RemoveReferee", cancellationToken, roomId, userId);
+
+        /// <summary>
+        /// Moves a user to a different team and/or slot in a room managed via the referee hub.
+        /// </summary>
+        public Task MoveUserAsync(long roomId, MoveUserRequest request, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("MoveUser", cancellationToken, roomId, request);
+
+        /// <summary>
+        /// Toggles players' ability to change teams and slots in a room managed via the referee hub.
+        /// </summary>
+        public Task SetLockStateAsync(long roomId, bool locked, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("SetLockState", cancellationToken, roomId, new SetLockStateRequest { Locked = locked });
+
+        /// <summary>
+        /// Closes a room managed via the referee hub, kicking every user in it.
+        /// </summary>
+        public Task CloseRoomAsync(long roomId, CancellationToken cancellationToken = default)
+            => invokeRefereeAsync("CloseRoom", cancellationToken, roomId);
+
+        private async Task invokeRefereeAsync(string method, CancellationToken cancellationToken, params object?[] args)
+        {
+            var connection = hubConnection;
+
+            if (connection == null || ConnectionState.Value != RefereeConnectionState.Connected)
+                throw new InvalidOperationException("Not connected to the referee hub.");
+
+            await RefreshStatusAsync().ConfigureAwait(false);
+
+            await connection.InvokeCoreAsync(method, args, cancellationToken).ConfigureAwait(false);
         }
 
         #endregion

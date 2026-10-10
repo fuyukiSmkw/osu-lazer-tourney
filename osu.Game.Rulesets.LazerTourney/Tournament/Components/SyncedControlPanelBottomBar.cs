@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -14,13 +13,13 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Localisation;
 using osu.Game.Graphics;
+using osu.Game.Online.API;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
-using osu.Game.Online.Multiplayer.Countdown;
 using osu.Game.Online.Rooms;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Notifications;
-using osu.Game.Resources.Localisation.Web;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osuTK;
 using osuTK.Graphics;
@@ -55,12 +54,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved]
         private ChatTimerService timerService { get; set; } = null!;
 
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
+
         [Resolved(CanBeNull = true)]
         private INotificationOverlay? notifications { get; set; }
+
+        [Resolved]
+        private IAPIProvider api { get; set; } = null!;
 
         private readonly Bindable<Channel?> channel = new Bindable<Channel?>();
 
         private TournamentChatTextBox textBox = null!;
+        private TournamentChatCommandHandler? commandHandler;
         private TournamentSpriteText countdownText = null!;
 
         private Room? currentRoom;
@@ -124,6 +130,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             textBox.OnCommit += postMessage;
             channel.BindValueChanged(onChannelChanged);
             timerService.RemainingSeconds.BindValueChanged(onRemainingSecondsChanged, true);
+
+            commandHandler = new TournamentChatCommandHandler(client, refereeAuth, timerService, () => channel.Value, notify, api);
         }
 
         /// <summary>
@@ -225,49 +233,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         #region Commands
 
-        public static readonly List<string> UNSUPPORTED_COMMANDS =
-        [
-            "join",
-            "chat",
-            "msg",
-            "query",
-            "watch"
-        ];
-
-        public static readonly List<string> COMMANDS =
-        [
-            "help",
-            "abort",
-            "kick",
-            "me",
-            "np",
-            "roll",
-            "savelog",
-            "start",
-            "timer"
-        ];
-
-        /// <summary>
-        /// Legacy aliases for the commands in <see cref="COMMANDS"/> (alias -&gt; canonical name).
-        /// Values must be entries of <see cref="COMMANDS"/>.
-        /// Aliases run and tab-complete exactly like their canonical commands,
-        /// but <c>/help</c> only lists canonical names.
-        /// </summary>
-        public static readonly Dictionary<string, string> COMMAND_ALIASES = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // e.g. ["oldname"] = "newname",
-        };
-
-        /// <summary>
-        /// Resolves an alias to its canonical command name. Returns the input unchanged when it is not an alias.
-        /// </summary>
-        public static string ResolveCommandName(string name)
-            => COMMAND_ALIASES.TryGetValue(name, out string? canonical) ? canonical : name;
-
         /// <summary>
         /// Sends on commit (Enter) and clears the box. Mirrors <see cref="StandAloneChatDisplay"/> posting.
         /// Clearing propagates through the draft binding, so both screens clear together.
-        /// Messages starting with <c>/</c> first go through the custom referee commands below;
+        /// Messages starting with <c>/</c> first go through <see cref="ChatCommands.TournamentChatCommandHandler"/>;
         /// anything unknown falls through to <see cref="ChannelManager.PostCommand"/>.
         /// </summary>
         private void postMessage(TextBox sender, bool newText)
@@ -277,13 +246,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (string.IsNullOrWhiteSpace(text))
                 return;
 
-            if (text[0] == '/' && tryInterceptUnsupportedCommand(text.Substring(1)))
-            {
-                textBox.Text = string.Empty;
-                return;
-            }
-
-            if (text[0] == '/' && tryHandleCustomCommand(text.Substring(1)))
+            if (text[0] == '/' && commandHandler?.HandleCommand(text.Substring(1)) == true)
             {
                 textBox.Text = string.Empty;
                 return;
@@ -296,193 +259,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             textBox.Text = string.Empty;
         }
-
-        /// <summary>
-        /// Blocks commands whose official handlers would navigate away or otherwise break
-        /// the tournament client. Returns true when blocked (with a notification posted).
-        /// </summary>
-        private bool tryInterceptUnsupportedCommand(string commandText)
-        {
-            string commandName = commandText.Split(' ', 2)[0].ToLowerInvariant();
-
-            if (!UNSUPPORTED_COMMANDS.Contains(commandName))
-                return false;
-
-            notify($"/{commandName} is not supported in lazer!tourney.");
-            return true;
-        }
-
-        /// <summary>
-        /// Handles the custom referee commands. Returns false for unknown commands
-        /// so the caller falls through to <see cref="ChannelManager.PostCommand"/>.
-        /// </summary>
-        private bool tryHandleCustomCommand(string commandText)
-        {
-            string[] parts = commandText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            if (parts.Length == 0)
-            {
-                notify("Where's your command?");
-                return true;
-            }
-
-            bool noArg = parts.Length == 1;
-
-            switch (ResolveCommandName(parts[0]).ToLowerInvariant())
-            {
-                case "help":
-                    if (noArg)
-                    {
-                        string s = "Available commands:";
-                        foreach (string i in COMMANDS)
-                            s += $"\n{usageOfCommand(i)}";
-                        string aliasLine = aliasSummary();
-                        if (aliasLine != null)
-                            s += $"\n{aliasLine}";
-                        notify(s);
-                    }
-                    else if (parts.Length == 2)
-                    {
-                        string c = ResolveCommandName(parts[1]);
-                        if (COMMANDS.Contains(c))
-                            notify($"Usage: {usageOfCommand(c)}\n{helpOfCommand(c)}");
-                        else
-                            notify($"Command /{parts[1]} does not exist.");
-                    }
-                    else
-                        notify(usageOfCommand("help"));
-                    return true;
-
-                case "timer":
-                    if (noArg || !int.TryParse(parts[1], out int timerSeconds) || timerSeconds < 0)
-                        notify(usageOfCommand("timer"));
-                    else
-                        timerService.StartTimer(timerSeconds, channel.Value);
-                    return true;
-
-                case "start":
-                    if (noArg)
-                    {
-                        startMatch();
-                        return true;
-                    }
-                    if (!int.TryParse(parts[1], out int startSeconds) || startSeconds < 0)
-                        notify(usageOfCommand("start"));
-                    else if (startSeconds == 0)
-                        startMatch();
-                    else
-                        startMatchDelayed(TimeSpan.FromSeconds(startSeconds));
-                    return true;
-
-                case "abort":
-                    if (!noArg)
-                    {
-                        notify(usageOfCommand("abort"));
-                        return true;
-                    }
-                    abortMatch();
-                    return true;
-
-                case "kick":
-                    if (noArg)
-                        notify(usageOfCommand("kick"));
-                    else
-                        kickUser(string.Join(' ', parts.Skip(1)));
-                    return true;
-
-                default:
-                    return false;
-            }
-        }
-
-        /// <summary>
-        /// Starts the match immediately. Mirrors <c>MatchStartControl</c>'s referee start.
-        /// </summary>
-        private void startMatch()
-        {
-            if (client.Room == null)
-                return;
-
-            if (!isPriviledged())
-            {
-                notify("You don't have permission to start.");
-                return;
-            }
-
-            client.StartMatch().FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
-        }
-
-        /// <summary>
-        /// Starts the match after <paramref name="delay"/>. Mirrors <c>MatchStartControl</c>'s countdown button.
-        /// </summary>
-        private void startMatchDelayed(TimeSpan delay)
-        {
-            if (client.Room == null)
-                return;
-
-            if (!isPriviledged())
-            {
-                notify("You don't have permission to start.");
-                return;
-            }
-
-            client.SendMatchRequest(new StartMatchCountdownRequest { Duration = delay })
-                  .FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}", true));
-        }
-
-        /// <summary>
-        /// Kicks a room user by username. Mirrors the participant list kick button,
-        /// plus a chat message announcing the kick.
-        /// </summary>
-        private void kickUser(string username)
-        {
-            var room = client.Room;
-
-            if (room == null)
-                return;
-
-            if (!isPriviledged())
-            {
-                notify("You don't have permission to kick users.");
-                return;
-            }
-
-            var target = room.Users.FirstOrDefault(u => string.Equals(u.User?.Username, username, StringComparison.OrdinalIgnoreCase));
-
-            if (target == null)
-            {
-                notify($"User {username} does not exist or is not in the room.");
-                return;
-            }
-
-            client.KickUser(target.UserID).FireAndForget(
-                onSuccess: () => channelManager?.PostMessage($"Kicked {target.User?.Username}", target: channel.Value),
-                onError: ex => notify($"Failed to kick {username}: {ex.Message}", true));
-
-        }
-
-        /// <summary>
-        /// Aborts the running match. Mirrors <c>MatchStartControl</c>'s referee abort
-        /// (without the confirm dialog). No-op unless a match is running.
-        /// </summary>
-        private void abortMatch()
-        {
-            if (client.Room?.State is not MultiplayerRoomState.WaitingForLoad and not MultiplayerRoomState.Playing)
-            {
-                notify("No ongoing match.");
-                return;
-            }
-
-            if (!isPriviledged())
-            {
-                notify("You don't have permission to abort.");
-                return;
-            }
-
-            client.AbortMatch().FireAndForget(onError: ex => notify($"Failed to abort match: {ex.Message}", true));
-        }
-
-        private bool isPriviledged() => client.IsHost || client.IsReferee;
 
         private void notify(string text, bool important = false)
         {
@@ -499,101 +275,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         #endregion Commands
 
-        #region Help for commands
-
-        // Reverse view of COMMAND_ALIASES (canonical name -> aliases), built once for listing aliases in /help.
-        // C# has no compile-time map building without source generators; a static constructor is the closest equivalent.
-        private static readonly Dictionary<string, string[]> aliases_by_command;
-
-        static SyncedControlPanelBottomBar()
-        {
-            aliases_by_command = COMMAND_ALIASES
-                               .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-                               .ToDictionary(g => g.Key, g => g.Select(kv => kv.Key).ToArray(), StringComparer.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Summarises all aliases in one line for the end of <c>/help</c>, or null when there are none.
-        /// </summary>
-        private static string aliasSummary(string? cmd = null)
-        {
-            var parts = new List<string>();
-            void addParts(string c)
-            {
-                if (!aliases_by_command.TryGetValue(c, out string[]? aliases))
-                    return;
-                foreach (string a in aliases)
-                    parts.Add($"/{a}");
-            }
-
-            if (cmd is null) // all
-                foreach (string c in COMMANDS)
-                    addParts(c);
-            else
-                addParts(cmd);
-
-            return parts.Count == 0 ? null : "Aliases: " + string.Join(", ", parts);
-        }
-
-        private string usageOfCommand(string cmd)
-        {
-            switch (cmd)
-            {
-                case "help":
-                    return "/help [command]";
-                case "abort":
-                    return "/abort";
-                case "kick":
-                    return "/kick <username>";
-                case "me":
-                    return "/me <message>";
-                case "np":
-                    return "/np";
-                case "roll":
-                    return "/roll [2~100]";
-                case "savelog":
-                    return "/savelog";
-                case "start":
-                    return "/start [number]";
-                case "timer":
-                    return "/timer <number>";
-            }
-            return null;
-        }
-
-        private string helpOfCommand(string cmd)
-        {
-            switch (cmd)
-            {
-                case "help":
-                    return "Show the list of all commands or help for a certain command";
-                case "abort":
-                    return "Abort the ongoing match.";
-                case "kick":
-                    return "Kick a user from the room by username.";
-                case "me":
-                    return "Send an action message.";
-                case "np":
-                    return "Print to chat the current song you are listening to.";
-                case "roll":
-                    return "Rolls a random number.";
-                case "savelog":
-                    return "Saves the current chat tab to a text file.";
-                case "start":
-                    return "Start match immediately or in specific seconds.";
-                case "timer":
-                    return "Start a local timer that sends message every 30 seconds or at the last few seconds.\nWill notify you when the timer ends.\n/start 0 to stop the current timer.";
-            }
-            return null;
-        }
-
-        #endregion
-
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
 
             textBox?.OnCommit -= postMessage;
+
+            commandHandler?.Dispose();
+            commandHandler = null;
 
             channel.UnbindAll();
 

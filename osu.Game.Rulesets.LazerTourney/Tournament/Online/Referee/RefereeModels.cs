@@ -93,4 +93,38 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online.Referee
         [JsonPropertyName("queue_mode")]
         public string QueueMode { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// Request body for the referee hub <c>MoveUser</c> method.
+    /// Mirrors <c>osu.Server.Spectator.Hubs.Referee.Models.Requests.MoveUserRequest</c>.
+    /// </summary>
+    public class MoveUserRequest
+    {
+        [JsonPropertyName("user_id")]
+        public int UserId { get; set; }
+
+        /// <summary>
+        /// Either "red" or "blue". Null keeps the previous team.
+        /// </summary>
+        [JsonPropertyName("team")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Team { get; set; }
+
+        /// <summary>
+        /// 1-16. Null keeps the previous slot.
+        /// </summary>
+        [JsonPropertyName("slot")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public byte? Slot { get; set; }
+    }
+
+    /// <summary>
+    /// Request body for the referee hub <c>SetLockState</c> method.
+    /// Mirrors <c>osu.Server.Spectator.Hubs.Referee.Models.Requests.SetLockStateRequest</c>.
+    /// </summary>
+    public class SetLockStateRequest
+    {
+        [JsonPropertyName("locked")]
+        public bool Locked { get; set; }
+    }
 }

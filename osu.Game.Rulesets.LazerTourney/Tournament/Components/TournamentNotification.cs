@@ -72,6 +72,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                         Size = new Vector2(16),
                     }
                 });
+            else
+                IconContent.Width = 0;
 
             Content.Add(TextFlow = new OsuTextFlowContainer(t => t.Font = t.Font.With(size: 14, weight: FontWeight.Medium))
             {

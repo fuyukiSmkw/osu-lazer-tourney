@@ -10,6 +10,7 @@ using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Input.Events;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
 using osuTK.Input;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
@@ -96,8 +97,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 {
                     // A single token right after '/' must be a command name; anything else is meaningless.
                     // Aliases come from the mapping, never from COMMANDS itself.
-                    var commandMatches = SyncedControlPanelBottomBar.COMMANDS
-                                                               .Concat(SyncedControlPanelBottomBar.COMMAND_ALIASES.Keys)
+                    var commandMatches = TournamentChatCommandHandler.COMMANDS
+                                                               .Concat(TournamentChatCommandHandler.COMMAND_ALIASES.Keys)
                                                                .Where(c => c.StartsWith(head, StringComparison.OrdinalIgnoreCase)).ToList();
 
                     if (commandMatches.Count == 1)

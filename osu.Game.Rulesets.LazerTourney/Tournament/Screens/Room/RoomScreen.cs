@@ -746,6 +746,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
                 {
                     // Not a referee of this room (or the hub call failed); fall through to the regular join.
                     Logger.Log($"Referee hub join for room {joinTarget.RoomID} failed, joining regularly: {ex.Message}");
+                    Logging.LogError(ex);
                 }
             }
 
