@@ -21,7 +21,10 @@ using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Rooms;
 using osu.Game.Overlays;
+using osu.Game.Overlays.Notifications;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.LazerTourney.Tournament.Online.Referee;
 using osu.Game.Screens.OnlinePlay;
 using osu.Game.Screens.OnlinePlay.Match.Components;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Match;
@@ -58,6 +61,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
         public OsuTextBox PasswordTextBox = null!;
         public OsuCheckbox AutoSkipCheckbox = null!;
         private RoundedButton applyButton = null!;
+        private RoundedButton refereeApplyButton = null!;
         public OsuSpriteText ErrorText = null!;
 
         private OsuEnumDropdown<StartMode> startModeDropdown = null!;
@@ -72,6 +76,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
         [Resolved]
         private TournamentOnlineState onlineState { get; set; } = null!;
+
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
+
+        [Resolved(CanBeNull = true)]
+        private INotificationOverlay? notifications { get; set; }
 
         [Resolved]
         private OngoingOperationTracker ongoingOperationTracker { get; set; } = null!;
@@ -377,6 +387,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
                                                         Text = "Create",
                                                         Action = apply,
                                                     },
+                                                    refereeApplyButton = new RoundedButton
+                                                    {
+                                                        Size = new Vector2(230, 50),
+                                                        Enabled = { Value = false },
+                                                        Text = "Create via Referee",
+                                                        Action = applyViaReferee,
+                                                    },
                                                 }
                                             },
                                             ErrorText = new OsuSpriteText
@@ -533,6 +550,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
                 applyButton.Enabled.Value = room.Playlist.Count > 0 && NameField.Text.Length > 0 && !operationInProgress.Value;
                 applyButton.Text = room.RoomID == null ? "Create" : "Update";
             }
+
+            if (refereeApplyButton != null)
+            {
+                // Referee creation is only available when not already in a room.
+                bool creating = room.RoomID == null;
+                refereeApplyButton.Alpha = creating ? 1 : 0;
+                refereeApplyButton.Enabled.Value = creating
+                                                   && room.Playlist.Count > 0
+                                                   && NameField.Text.Length > 0
+                                                   && !operationInProgress.Value
+                                                   && refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
+            }
         }
 
         private void addCurrentBeatmap()
@@ -643,6 +672,151 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
             // in which case EnsureSpectateAsync returns immediately.)
             if (created)
                 onlineState.EnsureSpectateAsync().FireAndForget();
+        }
+
+        /// <summary>
+        /// Creates a new room through the referee hub API instead of the game client.
+        /// Only the first playlist item can be carried over: <c>MakeRoom</c> accepts a single
+        /// beatmap/ruleset pair, and the remaining settings are applied afterwards.
+        /// </summary>
+        private async void applyViaReferee()
+        {
+            if (!refereeApplyButton.Enabled.Value)
+                return;
+
+            byte? maxParticipants = maximumParticipantsCheckbox.Current.Value ? maximumParticipantsSliderBar.Current.Value : null;
+
+            ErrorText.FadeOut(50);
+
+            // Guard against double-submission: the button only disables a frame later via Update().
+            if (applyingSettingsOperation != null)
+                return;
+
+            applyingSettingsOperation = ongoingOperationTracker.BeginOperation();
+
+            bool joined = false;
+            long refereeRoomId = 0;
+
+            try
+            {
+                var firstItem = drawablePlaylist.Items.FirstOrDefault();
+
+                if (firstItem == null)
+                {
+                    Schedule(() =>
+                    {
+                        ErrorText.Text = "The playlist is empty.";
+                        ErrorText.FadeIn(50);
+                    });
+                    return;
+                }
+
+                int beatmapId = firstItem.Beatmap.OnlineID;
+                int rulesetId = firstItem.RulesetID;
+
+                if (beatmapId <= 0)
+                {
+                    Schedule(() =>
+                    {
+                        ErrorText.Text = "The first playlist item is not available online.";
+                        ErrorText.FadeIn(50);
+                    });
+                    return;
+                }
+
+                string roomName = NameField.Text;
+                string password = PasswordTextBox.Text;
+                MatchType matchType = TypePicker.Current.Value;
+                QueueMode queueMode = QueueModeDropdown.Current.Value;
+                TimeSpan autoStartDuration = TimeSpan.FromSeconds((int)startModeDropdown.Current.Value);
+                bool autoSkip = AutoSkipCheckbox.Current.Value;
+                int playlistCount = drawablePlaylist.Items.Count;
+
+                // MakeRoom only takes these four fields; the room is created with server defaults otherwise
+                // (random password, head-to-head, host-only queue mode, automatic intro skip enabled).
+                RoomJoinedResponse response = await refereeAuth.MakeRoomAsync(new MakeRoomRequest
+                {
+                    RulesetId = rulesetId,
+                    BeatmapId = beatmapId,
+                    RoomName = roomName,
+                    MaxParticipants = maxParticipants ?? 0,
+                }).ConfigureAwait(false);
+
+                refereeRoomId = response.RoomId;
+
+                // Apply the remaining settings that MakeRoom cannot express.
+                // Null means "keep the previous value", which matches what MakeRoom just set.
+                await refereeAuth.ChangeRoomSettingsAsync(refereeRoomId, new ChangeRoomSettingsRequest
+                {
+                    Name = roomName,
+                    Password = password,
+                    MatchType = toRefereeMatchType(matchType),
+                    QueueMode = toRefereeQueueMode(queueMode),
+                    MaxParticipants = maxParticipants,
+                }).ConfigureAwait(false);
+
+                // The referee hub join above must come first; the lazer client join must come second.
+                var joinTarget = new osu.Game.Online.Rooms.Room
+                {
+                    RoomID = refereeRoomId,
+                    Password = password,
+                    Name = roomName,
+                    Type = matchType,
+                };
+
+                onlineState.SetPendingRoom(joinTarget);
+                await client.JoinRoom(joinTarget, password).ConfigureAwait(false);
+
+                // The referee API cannot express auto-start or auto-skip, so apply them via the game client.
+                await client.ChangeSettings(autoStartDuration: autoStartDuration, autoSkip: autoSkip).ConfigureAwait(false);
+
+                joined = true;
+
+                if (playlistCount > 1)
+                {
+                    Schedule(() => notifications?.Post(new TournamentNotification
+                    {
+                        Text = "Only the first playlist item was used to create the room. Add the rest from the map pool screen.",
+                        Transient = true,
+                    }));
+                }
+
+                Schedule(onSuccess);
+            }
+            catch (Exception ex)
+            {
+                string description = refereeRoomId != 0
+                    ? $"Error creating room via referee API (referee room ID: {refereeRoomId})"
+                    : "Error creating room via referee API";
+                onError(ex, description);
+            }
+            finally
+            {
+                // Release synchronously: a scheduled dispose would leak the lease if the callback never runs.
+                applyingSettingsOperation.Dispose();
+                applyingSettingsOperation = null;
+            }
+
+            // Same lease reasoning as in apply(): never await spectate enforcement while holding it.
+            if (joined)
+                onlineState.EnsureSpectateAsync().FireAndForget();
+        }
+
+        private static string toRefereeMatchType(MatchType type) => type == MatchType.TeamVersus ? "team_versus" : "head_to_head";
+
+        private static string toRefereeQueueMode(QueueMode mode)
+        {
+            switch (mode)
+            {
+                case QueueMode.AllPlayers:
+                    return "all_players";
+
+                case QueueMode.AllPlayersRoundRobin:
+                    return "all_players_round_robin";
+
+                default:
+                    return "host_only";
+            }
         }
 
         private void onSuccess() => Schedule(() =>

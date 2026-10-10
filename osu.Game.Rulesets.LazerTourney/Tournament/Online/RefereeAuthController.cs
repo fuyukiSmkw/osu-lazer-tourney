@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR.Client;
 using Newtonsoft.Json.Linq;
@@ -16,6 +17,7 @@ using osu.Framework.Platform;
 using osu.Game;
 using osu.Game.Online.API;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
+using osu.Game.Rulesets.LazerTourney.Tournament.Online.Referee;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 {
@@ -333,6 +335,55 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         {
             ConnectionState.Value = state;
             ConnectionStatusText.Value = text;
+        }
+
+        /// <summary>
+        /// Creates a new multiplayer room via the referee hub.
+        /// The caller is automatically joined to the room as a referee.
+        /// </summary>
+        public async Task<RoomJoinedResponse> MakeRoomAsync(MakeRoomRequest request, CancellationToken cancellationToken = default)
+        {
+            var connection = hubConnection;
+
+            if (connection == null || ConnectionState.Value != RefereeConnectionState.Connected)
+                throw new InvalidOperationException("Not connected to the referee hub.");
+
+            // Refresh the token first so a renewed token is used by the access token provider.
+            await RefreshStatusAsync().ConfigureAwait(false);
+
+            return await connection.InvokeAsync<RoomJoinedResponse>("MakeRoom", request, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Joins an existing multiplayer room via the referee hub.
+        /// The caller must already be an added referee of the room; no password is required.
+        /// </summary>
+        public async Task<RoomJoinedResponse> JoinRoomAsync(long roomId, CancellationToken cancellationToken = default)
+        {
+            var connection = hubConnection;
+
+            if (connection == null || ConnectionState.Value != RefereeConnectionState.Connected)
+                throw new InvalidOperationException("Not connected to the referee hub.");
+
+            // Refresh the token first so a renewed token is used by the access token provider.
+            await RefreshStatusAsync().ConfigureAwait(false);
+
+            return await connection.InvokeAsync<RoomJoinedResponse>("JoinRoom", roomId, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Changes the settings of a room managed via the referee hub.
+        /// </summary>
+        public async Task ChangeRoomSettingsAsync(long roomId, ChangeRoomSettingsRequest request, CancellationToken cancellationToken = default)
+        {
+            var connection = hubConnection;
+
+            if (connection == null || ConnectionState.Value != RefereeConnectionState.Connected)
+                throw new InvalidOperationException("Not connected to the referee hub.");
+
+            await RefreshStatusAsync().ConfigureAwait(false);
+
+            await connection.InvokeAsync("ChangeRoomSettings", roomId, request, cancellationToken).ConfigureAwait(false);
         }
 
         #endregion

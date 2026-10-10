@@ -67,6 +67,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
         [Resolved]
         private TournamentOnlineState onlineState { get; set; } = null!;
 
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
+
         [Resolved(CanBeNull = true)]
         private OngoingOperationTracker? ongoingOperationTracker { get; set; }
 
@@ -721,23 +724,54 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
             onlineState.SetPendingRoom(joinTarget);
 
-            client.JoinRoom(joinTarget, password).ContinueWith(result => Schedule(() =>
+            joinWithRefereeFirst(joinTarget, password, room, onSuccess, onFailure);
+        }
+
+        /// <summary>
+        /// Joins the room via the referee hub first (when connected), then via the regular lazer client.
+        /// The hub join must come first; a hub failure simply means we are not a referee of this room,
+        /// in which case the regular join proceeds either way.
+        /// </summary>
+        private async void joinWithRefereeFirst(osu.Game.Online.Rooms.Room joinTarget, string? password, osu.Game.Online.Rooms.Room originalRoom,
+                                                Action<osu.Game.Online.Rooms.Room> onSuccess, Action<string, Exception?> onFailure)
+        {
+            if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected && joinTarget.RoomID != null)
             {
-                if (result.IsCompletedSuccessfully)
+                try
                 {
-                    onlineState.EnsureSpectateAsync().FireAndForget();
-                    onSuccess(room);
+                    await refereeAuth.JoinRoomAsync(joinTarget.RoomID.Value).ConfigureAwait(false);
+                    Logger.Log($"Joined room {joinTarget.RoomID} via the referee hub.");
                 }
-                else
+                catch (Exception ex)
                 {
-                    Exception? exception = result.Exception?.AsSingular();
+                    // Not a referee of this room (or the hub call failed); fall through to the regular join.
+                    Logger.Log($"Referee hub join for room {joinTarget.RoomID} failed, joining regularly: {ex.Message}");
+                }
+            }
+
+            try
+            {
+                await client.JoinRoom(joinTarget, password).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Schedule(() =>
+                {
+                    Exception? exception = ex is AggregateException aggregate ? aggregate.AsSingular() : ex;
 
                     if (exception?.GetHubExceptionMessage() is string message)
                         onFailure(message, exception);
                     else
                         onFailure($"Failed to join multiplayer room. {exception?.Message}", exception);
-                }
-            }));
+                });
+                return;
+            }
+
+            Schedule(() =>
+            {
+                onlineState.EnsureSpectateAsync().FireAndForget();
+                onSuccess(originalRoom);
+            });
         }
 
         public void OpenCopy(osu.Game.Online.Rooms.Room room)
