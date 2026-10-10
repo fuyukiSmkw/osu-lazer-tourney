@@ -248,6 +248,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         ];
 
         /// <summary>
+        /// Legacy aliases for the commands in <see cref="COMMANDS"/> (alias -&gt; canonical name).
+        /// Values must be entries of <see cref="COMMANDS"/>.
+        /// Aliases run and tab-complete exactly like their canonical commands,
+        /// but <c>/help</c> only lists canonical names.
+        /// </summary>
+        public static readonly Dictionary<string, string> COMMAND_ALIASES = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            // e.g. ["oldname"] = "newname",
+        };
+
+        /// <summary>
+        /// Resolves an alias to its canonical command name. Returns the input unchanged when it is not an alias.
+        /// </summary>
+        public static string ResolveCommandName(string name)
+            => COMMAND_ALIASES.TryGetValue(name, out string? canonical) ? canonical : name;
+
+        /// <summary>
         /// Sends on commit (Enter) and clears the box. Mirrors <see cref="StandAloneChatDisplay"/> posting.
         /// Clearing propagates through the draft binding, so both screens clear together.
         /// Messages starting with <c>/</c> first go through the custom referee commands below;
@@ -311,7 +328,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             bool noArg = parts.Length == 1;
 
-            switch (parts[0].ToLowerInvariant())
+            switch (ResolveCommandName(parts[0]).ToLowerInvariant())
             {
                 case "help":
                     if (noArg)
@@ -319,15 +336,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                         string s = "Available commands:";
                         foreach (string i in COMMANDS)
                             s += $"\n{usageOfCommand(i)}";
+                        string aliasLine = aliasSummary();
+                        if (aliasLine != null)
+                            s += $"\n{aliasLine}";
                         notify(s);
                     }
                     else if (parts.Length == 2)
                     {
-                        string c = parts[1];
+                        string c = ResolveCommandName(parts[1]);
                         if (COMMANDS.Contains(c))
                             notify($"Usage: {usageOfCommand(c)}\n{helpOfCommand(c)}");
                         else
-                            notify($"Command /{c} does not exist.");
+                            notify($"Command /{parts[1]} does not exist.");
                     }
                     else
                         notify(usageOfCommand("help"));
@@ -480,6 +500,40 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         #endregion Commands
 
         #region Help for commands
+
+        // Reverse view of COMMAND_ALIASES (canonical name -> aliases), built once for listing aliases in /help.
+        // C# has no compile-time map building without source generators; a static constructor is the closest equivalent.
+        private static readonly Dictionary<string, string[]> aliases_by_command;
+
+        static SyncedControlPanelBottomBar()
+        {
+            aliases_by_command = COMMAND_ALIASES
+                               .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+                               .ToDictionary(g => g.Key, g => g.Select(kv => kv.Key).ToArray(), StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Summarises all aliases in one line for the end of <c>/help</c>, or null when there are none.
+        /// </summary>
+        private static string aliasSummary(string? cmd = null)
+        {
+            var parts = new List<string>();
+            void addParts(string c)
+            {
+                if (!aliases_by_command.TryGetValue(c, out string[]? aliases))
+                    return;
+                foreach (string a in aliases)
+                    parts.Add($"/{a}");
+            }
+
+            if (cmd is null) // all
+                foreach (string c in COMMANDS)
+                    addParts(c);
+            else
+                addParts(cmd);
+
+            return parts.Count == 0 ? null : "Aliases: " + string.Join(", ", parts);
+        }
 
         private string usageOfCommand(string cmd)
         {

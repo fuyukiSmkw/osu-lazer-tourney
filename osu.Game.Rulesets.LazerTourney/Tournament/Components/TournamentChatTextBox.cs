@@ -95,7 +95,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 if (!head.Contains(' '))
                 {
                     // A single token right after '/' must be a command name; anything else is meaningless.
-                    var commandMatches = SyncedControlPanelBottomBar.COMMANDS.Where(c => c.StartsWith(head, StringComparison.OrdinalIgnoreCase)).ToList();
+                    // Aliases come from the mapping, never from COMMANDS itself.
+                    var commandMatches = SyncedControlPanelBottomBar.COMMANDS
+                                                               .Concat(SyncedControlPanelBottomBar.COMMAND_ALIASES.Keys)
+                                                               .Where(c => c.StartsWith(head, StringComparison.OrdinalIgnoreCase)).ToList();
 
                     if (commandMatches.Count == 1)
                     {
