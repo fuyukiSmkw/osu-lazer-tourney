@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -12,10 +13,12 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
+using osu.Framework.Threading;
 using osu.Game.Configuration;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
+using osu.Game.Graphics.UserInterface;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
@@ -23,8 +26,14 @@ using osu.Game.Online.Multiplayer;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Overlays.Settings;
+using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.Mania.Configuration;
+using osu.Game.Rulesets.Mania.UI;
+using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
+using osu.Game.Rulesets.Taiko.Configuration;
+using osu.Game.Rulesets.UI;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -51,6 +60,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         private TournamentOnlineState onlineState { get; set; } = null!;
 
         [Resolved]
+        private TournamentStorage tournamentStorage { get; set; } = null!;
+
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
+
+        [Resolved]
         private SaveChangesOverlay saveChanges { get; set; } = null!;
 
         [Resolved]
@@ -63,6 +78,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         private OsuConfigManager config { get; set; } = null!;
 
         [Resolved]
+        private VisualAudioSettingsController visualAudioSettings { get; set; } = null!;
+
+        [Resolved]
         private FrameworkConfigManager frameworkConfig { get; set; } = null!;
 
         private readonly IBindable<APIUser> localUser = new Bindable<APIUser>();
@@ -71,8 +89,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// Whether the quit button is armed (first press done, awaiting confirmation press).
         /// Reset when navigating away from this screen.
         /// </summary>
-        private bool quitArmed;
-
+        private readonly BindableBool quitArmed = new();
 
         [BackgroundDependencyLoader]
         private void load()
@@ -114,9 +131,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             base.Hide();
 
             // Leaving this screen cancels a pending quit confirmation.
-            if (quitArmed)
+            if (quitArmed.Value)
             {
-                quitArmed = false;
+                quitArmed.Value = false;
 
                 if (IsLoaded)
                     Schedule(reload);
@@ -127,91 +144,152 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         {
             bool inRoom = onlineState.RoomJoined.Value;
 
-            var children = new List<Drawable>
+            var left = new List<Drawable>(coreSettingsSection(inRoom));
+            left.AddRange(refereeApiSection());
+
+            var right = new List<Drawable>(visualAudioSettingsSection());
+            right.AddRange(rulesetSettingsSection());
+
+            fillFlow.Children = new Drawable[]
             {
-                new ActionableInfo
+                new GridContainer
                 {
-                    Label = "Current user",
-                    ButtonText = "Change sign-in",
-                    Action = () =>
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    ColumnDimensions = new[]
                     {
-                        api.Logout();
-
-                        if (loginOverlay == null)
-                        {
-                            AddInternal(loginOverlay = new LoginOverlay
-                            {
-                                Anchor = Anchor.TopRight,
-                                Origin = Anchor.TopRight,
-                            });
-                        }
-
-                        loginOverlay.State.Value = Visibility.Visible;
+                        new Dimension(),
+                        new Dimension(),
                     },
-                    Value = api.LocalUser.Value.Username,
-                    Failing = api.IsLoggedIn != true,
-                    Description = "In order to access the API and display metadata, signing in is required."
+                    RowDimensions = new[]
+                    {
+                        new Dimension(GridSizeMode.AutoSize),
+                    },
+                    Content = new[]
+                    {
+                        new Drawable[]
+                        {
+                            columnFlow(left),
+                            columnFlow(right),
+                        },
+                    },
                 },
-                new LabelledDropdown<RulesetInfo?>(padded: true)
-                {
-                    Label = "Ruleset",
-                    Description = "Decides what stats are displayed and which ranks are retrieved for players. This requires a restart to reload data for an existing bracket.",
-                    Items = rulesets.AvailableRulesets,
-                    Current = LadderInfo.Ruleset,
-                    DropdownWidth = 0.5f,
-                },
-                new TournamentSwitcher
-                {
-                    Label = "Current tournament",
-                    Description = "Changes the background videos and bracket to match the selected tournament. This requires a restart to apply changes.",
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Auto advance screens",
-                    Description = "Screens will progress automatically from gameplay -> results -> map pool",
-                    Current = LadderInfo.AutoProgressScreens,
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Display team seeds",
-                    Description = "Team seeds will display alongside each team at the top in gameplay/map pool screens.",
-                    Current = LadderInfo.DisplayTeamSeeds,
-                },
-                new ActionableInfo
-                {
-                    Label = "Multiplayer room",
-                    ButtonText = inRoom ? "Manage" : "Select room",
-                    Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
-                    Value = inRoom ? onlineState.RoomName.Value : "Not joined",
-                    Failing = !inRoom,
-                    Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
-                },
-                new ResolutionSelector
-                {
-                    Label = "Display height",
-                    ButtonText = "Apply",
-                    Action = applyResolution,
-                    Description = "Sets the window height and the minimum required width for the tournament layout."
-                },
-                new LabelledSwitchButton
-                {
-                    Label = "Automatically download missing beatmaps",
-                    Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
-                    Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
-                },
-                new ActionableInfo
-                {
-                    Label = "Quit lazer!tourney",
-                    ButtonText = quitArmed ? "Click again to quit" : "Quit",
-                    ButtonColour = colours.Red3,
-                    Action = onQuitPressed,
-                }
+            };
+        }
+
+        private static FillFlowContainer columnFlow(List<Drawable> children) => new FillFlowContainer
+        {
+            RelativeSizeAxes = Axes.X,
+            AutoSizeAxes = Axes.Y,
+            Direction = FillDirection.Vertical,
+            Padding = new MarginPadding(20),
+            Spacing = new Vector2(10),
+            Children = children,
+        };
+
+        /// <summary>
+        /// Builds the core tournament setup section, including the quit button.
+        /// </summary>
+        private IEnumerable<Drawable> coreSettingsSection(bool inRoom)
+        {
+            yield return new OsuSpriteText
+            {
+                Text = "General settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
             };
 
-            // Visual & audio settings go right before the quit button.
-            children.InsertRange(children.Count - 1, visualAudioSettingsSection());
+            yield return new ActionableInfo
+            {
+                Label = "Current user",
+                ButtonText = "Change sign-in",
+                Action = () =>
+                {
+                    api.Logout();
 
-            fillFlow.Children = children.ToArray();
+                    if (loginOverlay == null)
+                    {
+                        AddInternal(loginOverlay = new LoginOverlay
+                        {
+                            Anchor = Anchor.TopRight,
+                            Origin = Anchor.TopRight,
+                        });
+                    }
+
+                    loginOverlay.State.Value = Visibility.Visible;
+                },
+                Value = api.LocalUser.Value.Username,
+                Failing = api.IsLoggedIn != true,
+                Description = "In order to access the API and display metadata, signing in is required."
+            };
+            yield return new TournamentSwitcher
+            {
+                Label = "",
+                Description = "Current tournament. This requires a restart to apply changes.",
+            };
+            yield return new LabelledDropdown<RulesetInfo?>(padded: true)
+            {
+                Label = "Ruleset",
+                Description = "Decides what stats are displayed and which ranks are retrieved for players. Only rulesets available online (usable in multiplayer rooms) are listed. This requires a restart to reload data for an existing bracket.",
+                // OnlineID < 0 means local-only (e.g. custom rulesets): the server cannot resolve them in multiplayer rooms.
+                // This intentionally does not hardcode the official rulesets, so private servers with more rulesets keep working.
+                Items = rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0),
+                Current = LadderInfo.Ruleset,
+                DropdownWidth = 0.5f,
+            };
+            yield return new ResolutionSelector
+            {
+                Label = "Window height",
+                ButtonText = "Apply",
+                Action = applyResolution,
+                Description = "Sets the window height and the minimum required width for the tournament layout."
+            };
+            yield return new ActionableInfo
+            {
+                Label = "Multiplayer room",
+                ButtonText = inRoom ? "Manage" : "Select room",
+                Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
+                Value = inRoom ? onlineState.RoomName.Value : "Not joined",
+                Failing = !inRoom,
+                Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Auto advance screens",
+                Description = "Screens will progress automatically from gameplay -> results -> map pool",
+                Current = LadderInfo.AutoProgressScreens,
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Display team seeds",
+                Description = "Team seeds will display alongside each team at the top in gameplay/map pool screens.",
+                Current = LadderInfo.DisplayTeamSeeds,
+            };
+            yield return new LabelledSwitchButton
+            {
+                Label = "Automatically download missing beatmaps",
+                Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
+                Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
+            };
+
+            const string quit_text = "Quit";
+            const string quit_confirmation_text = "Click again to quit";
+
+            var quitButton = new ActionableInfo
+            {
+                Label = "Quit lazer!tourney",
+                ButtonText = quit_text,
+                ButtonColour = colours.Red3,
+                Action = onQuitPressed,
+            };
+            yield return quitButton;
+
+            quitArmed.BindValueChanged(e =>
+            {
+                if (!e.OldValue)
+                    quitButton?.ButtonText = quit_confirmation_text;
+                else
+                    quitButton?.ButtonText = quit_text;
+            });
         }
 
         /// <summary>
@@ -406,6 +484,241 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         }
 
         /// <summary>
+        /// Builds the per-ruleset gameplay settings cell below Visual &amp; Audio.
+        /// Only the selected ruleset's settings are shown; the other rulesets'
+        /// settings are still saved, loaded and restored, just hidden.
+        /// Controls bind the lazer settings directly, so edits apply live;
+        /// values are persisted to the bracket file on save.
+        /// </summary>
+        private IEnumerable<Drawable> rulesetSettingsSection()
+        {
+            yield return new OsuSpriteText
+            {
+                Text = "Ruleset settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            foreach (var drawable in rulesetSettingsControls())
+                yield return drawable;
+        }
+
+        private IEnumerable<Drawable> rulesetSettingsControls()
+        {
+            switch (LadderInfo.Ruleset.Value?.ShortName)
+            {
+                case "osu" when visualAudioSettings.OsuRulesetConfig is { } config:
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Snaking in sliders",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Snaking out sliders",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Hit animations",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.HitAnimations),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Cursor trail",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Cursor ripples",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples),
+                    };
+                    yield return new LabelledDropdown<PlayfieldBorderStyle>(padded: true)
+                    {
+                        Label = "Playfield border style",
+                        Items = Enum.GetValues<PlayfieldBorderStyle>(),
+                        Current = config.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle),
+                    };
+                    yield break;
+
+                case "taiko" when visualAudioSettings.TaikoRulesetConfig is { } config:
+                    yield return new LabelledDropdown<TaikoTouchControlScheme>(padded: true)
+                    {
+                        Label = "Touch control scheme",
+                        Items = Enum.GetValues<TaikoTouchControlScheme>(),
+                        Current = config.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Hit animations",
+                        Current = config.GetBindable<bool>(TaikoRulesetSetting.HitAnimations),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Rate-adjusted hit animations",
+                        Current = config.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation),
+                    };
+                    yield break;
+
+                case "mania" when visualAudioSettings.ManiaRulesetConfig is { } config:
+                    yield return new LabelledDropdown<ManiaScrollingDirection>(padded: true)
+                    {
+                        Label = "Scrolling direction",
+                        Items = Enum.GetValues<ManiaScrollingDirection>(),
+                        Current = config.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection),
+                    };
+                    yield return new SettingsSlider<double>
+                    {
+                        LabelText = "Scroll speed",
+                        Current = config.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed),
+                        KeyboardStep = 1,
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Timing-based note colouring",
+                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Touch overlay",
+                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay),
+                    };
+                    yield break;
+            }
+
+            yield return new OsuSpriteText
+            {
+                Text = "No configurable settings for this ruleset.",
+                Font = OsuFont.GetFont(size: 14),
+            };
+        }
+
+        /// <summary>
+        /// Builds the Referee hub API section. Client credentials live in the bracket file;
+        /// access tokens live per tournament in the shared ini file and are never shared.
+        /// </summary>
+        private IEnumerable<Drawable> refereeApiSection()
+        {
+            var statusText = new OsuSpriteText
+            {
+                Font = OsuFont.GetFont(size: 18),
+                Text = refereeAuth.StatusText.Value,
+            };
+
+            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 18))
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+            };
+
+            guide.AddText("Control multiplayer rooms through the referee hub API.\n\n");
+            guide.AddText("1. Create an OAuth application at https://osu.ppy.sh/home/account/edit (Account settings, OAuth section). "); guide.AddArbitraryDrawable(new ExternalLinkButton("https://osu.ppy.sh/home/account/edit#new-oauth-application"));
+            guide.AddText($"\n\n2. Set its Application Callback URL to {RefereeAuthController.CallbackUrl} (Copy callback URL button below).\n\n");
+            guide.AddText("3. Enter the Client ID and Client Secret below.\n\n");
+            guide.AddText("4. Press Authorise and approve in the browser.\n\n");
+            guide.AddText("Note: unless the application is owned by a bot account, only its owner can complete the authorisation. "
+                          + "Credentials and tokens live in tournament-lazer.ini and never leave this machine.");
+
+            yield return new OsuSpriteText
+            {
+                Text = "Referee hub API settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            yield return guide;
+
+            yield return new ActionableInfo
+            {
+                Label = "Callback URL",
+                ButtonText = "Copy URL",
+                Action = refereeAuth.CopyCallbackUrl,
+                Value = RefereeAuthController.CallbackUrl,
+            };
+
+            yield return new LabelledTextBox(padded: true)
+            {
+                Label = "Client ID",
+                Current = tournamentStorage.RefereeClientId,
+            };
+
+            yield return new LabelledTextBox(padded: true)
+            {
+                Label = "Client secret",
+                Current = tournamentStorage.RefereeClientSecret,
+            };
+
+            yield return tokenRow = new ActionableInfo
+            {
+                Label = "Access token",
+                ButtonText = "Authorise",
+                Action = () =>
+                {
+                    if (refereeAuth.HasValidToken.Value)
+                        refereeAuth.Revoke();
+                    else
+                    {
+                        refereeAuth.AuthorizeAsync()
+                                   .ContinueWith(_ => Schedule(() => updateTokenRow()));
+                    }
+                },
+                Value = refereeAuth.StatusText.Value,
+                Failing = !refereeAuth.HasValidToken.Value,
+            };
+
+            yield return connectionRow = new ActionableInfo
+            {
+                Label = "Hub connection",
+                ButtonText = "Connect",
+                Action = () =>
+                {
+                    if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected)
+                        refereeAuth.DisconnectAsync().ContinueWith(_ => { });
+                    else
+                    {
+                        refereeAuth.ConnectAsync().ContinueWith(_ => { });
+                    }
+                },
+                Value = refereeAuth.ConnectionStatusText.Value,
+                ButtonEnabled = refereeAuth.HasValidToken.Value,
+            };
+
+            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateConnectionRow();
+            }));
+
+            refereeAuth.RefreshStatusAsync()
+                       .ContinueWith(_ => Schedule(() =>
+                       {
+                           if (!IsDisposed)
+                           {
+                               updateTokenRow();
+                               updateConnectionRow();
+                           }
+                       }));
+        }
+
+        private ActionableInfo tokenRow = null!;
+        private ActionableInfo connectionRow = null!;
+
+        private void updateTokenRow()
+        {
+            tokenRow.Value = refereeAuth.StatusText.Value;
+            tokenRow.Failing = !refereeAuth.HasValidToken.Value;
+            tokenRow.ButtonText = refereeAuth.HasValidToken.Value ? "Revoke" : "Authorise";
+            updateConnectionRow();
+        }
+
+        private void updateConnectionRow()
+        {
+            connectionRow.Value = refereeAuth.ConnectionStatusText.Value;
+
+            bool connected = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
+            connectionRow.ButtonText = connected ? "Disconnect" : "Connect";
+            connectionRow.ButtonEnabled = connected || refereeAuth.HasValidToken.Value;
+        }
+
+        /// <summary>
         /// Applies the given display height and the minimum required width for the tournament layout.
         /// </summary>
         private void applyResolution(int height)
@@ -416,18 +729,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void onQuitPressed() => Schedule(() =>
         {
-            if (!quitArmed)
+            if (!quitArmed.Value)
             {
-                quitArmed = true;
-                reload();
+                quitArmed.Value = true;
+                // reload();
                 return;
             }
 
-            quitArmed = false;
+            quitArmed.Value = false;
 
             if (saveChanges.HasUnsavedChanges)
             {
-                reload();
+                // reload();
                 dialogOverlay.Push(new ConfirmDialog("You have unsaved changes. Quit without saving?", () => sceneManager?.ExitTournament()));
             }
             else

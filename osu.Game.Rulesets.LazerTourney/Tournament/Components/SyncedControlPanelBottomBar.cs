@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -12,13 +13,13 @@ using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Localisation;
 using osu.Game.Graphics;
+using osu.Game.Online.API;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
-using osu.Game.Online.Multiplayer.Countdown;
 using osu.Game.Online.Rooms;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Notifications;
-using osu.Game.Resources.Localisation.Web;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osuTK;
 using osuTK.Graphics;
@@ -53,12 +54,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved]
         private ChatTimerService timerService { get; set; } = null!;
 
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
+
         [Resolved(CanBeNull = true)]
         private INotificationOverlay? notifications { get; set; }
 
+        [Resolved]
+        private IAPIProvider api { get; set; } = null!;
+
         private readonly Bindable<Channel?> channel = new Bindable<Channel?>();
 
-        private StandAloneChatDisplay.ChatTextBox textBox = null!;
+        private TournamentChatTextBox textBox = null!;
+        private TournamentChatCommandHandler? commandHandler;
         private TournamentSpriteText countdownText = null!;
 
         private Room? currentRoom;
@@ -106,11 +114,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                 },
                             },
                         },
-                        textBox = new StandAloneChatDisplay.ChatTextBox
+                        textBox = new TournamentChatTextBox
                         {
                             RelativeSizeAxes = Axes.X,
                             Height = 30,
-                            PlaceholderText = ChatStrings.InputPlaceholder,
+                            // PlaceholderText = ChatStrings.InputPlaceholder,
+                            PlaceholderText = "type message...",
                             ReleaseFocusOnCommit = false,
                             // HoldFocus = true,
                         },
@@ -121,6 +130,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             textBox.OnCommit += postMessage;
             channel.BindValueChanged(onChannelChanged);
             timerService.RemainingSeconds.BindValueChanged(onRemainingSecondsChanged, true);
+
+            commandHandler = new TournamentChatCommandHandler(client, refereeAuth, timerService, () => channel.Value, notify, api);
         }
 
         /// <summary>
@@ -220,10 +231,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             textBox.Current.BindTo(e.NewValue.TextBoxMessage);
         }
 
+        #region Commands
+
         /// <summary>
         /// Sends on commit (Enter) and clears the box. Mirrors <see cref="StandAloneChatDisplay"/> posting.
         /// Clearing propagates through the draft binding, so both screens clear together.
-        /// Messages starting with <c>/</c> first go through the custom referee commands below;
+        /// Messages starting with <c>/</c> first go through <see cref="ChatCommands.TournamentChatCommandHandler"/>;
         /// anything unknown falls through to <see cref="ChannelManager.PostCommand"/>.
         /// </summary>
         private void postMessage(TextBox sender, bool newText)
@@ -233,7 +246,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             if (string.IsNullOrWhiteSpace(text))
                 return;
 
-            if (text[0] == '/' && tryHandleCustomCommand(text.Substring(1)))
+            if (text[0] == '/' && commandHandler?.HandleCommand(text.Substring(1)) == true)
             {
                 textBox.Text = string.Empty;
                 return;
@@ -247,106 +260,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             textBox.Text = string.Empty;
         }
 
-        /// <summary>
-        /// Handles the custom referee commands. Returns false for unknown commands
-        /// so the caller falls through to <see cref="ChannelManager.PostCommand"/>.
-        /// </summary>
-        private bool tryHandleCustomCommand(string commandText)
-        {
-            string[] parts = commandText.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        private void notify(string text, bool important = false)
+            => ChatNotifier.Notify(notifications, channel.Value, text, important);
 
-            if (parts.Length == 0)
-                return false;
-
-            string content = parts.Length == 2 ? parts[1] : string.Empty;
-
-            switch (parts[0].ToLowerInvariant())
-            {
-                case "timer":
-                    if (!int.TryParse(content, out int timerSeconds) || timerSeconds < 0)
-                        notify("Usage: /timer <number>");
-                    else
-                        timerService.StartTimer(timerSeconds, channel.Value);
-                    return true;
-
-                case "start":
-                    if (string.IsNullOrEmpty(content))
-                    {
-                        startMatch();
-                        return true;
-                    }
-
-                    if (!int.TryParse(content, out int startSeconds) || startSeconds < 0)
-                        notify("Usage: /start [seconds]");
-                    else if (startSeconds == 0)
-                        startMatch();
-                    else
-                        startMatchDelayed(TimeSpan.FromSeconds(startSeconds));
-                    return true;
-
-                case "abort":
-                    if (!string.IsNullOrEmpty(content))
-                    {
-                        notify("Usage: /abort");
-                        return true;
-                    }
-
-                    abortMatch();
-                    return true;
-
-                default:
-                    return false;
-            }
-        }
-
-        /// <summary>
-        /// Starts the match immediately. Mirrors <c>MatchStartControl</c>'s referee start.
-        /// </summary>
-        private void startMatch()
-        {
-            if (client.Room == null)
-                return;
-
-            client.StartMatch().FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}"));
-        }
-
-        /// <summary>
-        /// Starts the match after <paramref name="delay"/>. Mirrors <c>MatchStartControl</c>'s countdown button.
-        /// </summary>
-        private void startMatchDelayed(TimeSpan delay)
-        {
-            if (client.Room == null)
-                return;
-
-            client.SendMatchRequest(new StartMatchCountdownRequest { Duration = delay })
-                  .FireAndForget(onError: ex => notify($"Failed to start match: {ex.Message}"));
-        }
-
-        /// <summary>
-        /// Aborts the running match. Mirrors <c>MatchStartControl</c>'s referee abort
-        /// (without the confirm dialog). No-op unless a match is running.
-        /// </summary>
-        private void abortMatch()
-        {
-            if (client.Room?.State is not MultiplayerRoomState.WaitingForLoad and not MultiplayerRoomState.Playing)
-                return;
-
-            client.AbortMatch().FireAndForget(onError: ex => notify($"Failed to abort match: {ex.Message}"));
-        }
-
-        private void notify(string text)
-        {
-            if (notifications != null)
-                notifications.Post(new SimpleNotification { Text = text });
-            else
-                channel.Value?.AddNewMessages(new ErrorMessage(text));
-        }
+        #endregion Commands
 
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
 
             textBox?.OnCommit -= postMessage;
+
+            commandHandler?.Dispose();
+            commandHandler = null;
 
             channel.UnbindAll();
 
@@ -362,7 +288,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         /// </summary>
         private partial class TitleContainer : osu.Framework.Graphics.Containers.Container, IHasTooltip
         {
-            public LocalisableString TooltipText => "commands: /timer, /start, /abort";
+            public LocalisableString TooltipText => "/help for a list of commands\ntab for username completion";
         }
     }
 }

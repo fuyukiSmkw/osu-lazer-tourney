@@ -26,12 +26,12 @@ using osu.Game.Online.API;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Multiplayer.MatchTypes.TeamVersus;
 using osu.Game.Online.Rooms;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup;
 using osu.Game.Screens.OnlinePlay;
 using osu.Game.Screens.OnlinePlay.Lounge;
 using osu.Game.Screens.OnlinePlay.Lounge.Components;
-using osu.Game.Screens.OnlinePlay.Match.Components;
 using osu.Game.Screens.OnlinePlay.Multiplayer;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Match;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Match.Playlist;
@@ -66,6 +66,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
         [Resolved]
         private TournamentOnlineState onlineState { get; set; } = null!;
+
+        [Resolved]
+        private RefereeAuthController refereeAuth { get; set; } = null!;
 
         [Resolved(CanBeNull = true)]
         private OngoingOperationTracker? ongoingOperationTracker { get; set; }
@@ -116,7 +119,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
         private Container chatContainer = null!;
         private ParticipantsList participantsList = null!;
         private MultiplayerPlaylist multiplayerPlaylist = null!;
-        private MatchChatDisplay? roomChat;
+        private TournamentMatchChatDisplay? roomChat;
         private MultiplayerRoomPanel? roomPanel;
         private TourneyButton rejoinButton = null!;
         private TourneyButton editRoomButton = null!;
@@ -721,23 +724,55 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
             onlineState.SetPendingRoom(joinTarget);
 
-            client.JoinRoom(joinTarget, password).ContinueWith(result => Schedule(() =>
+            joinWithRefereeFirst(joinTarget, password, room, onSuccess, onFailure);
+        }
+
+        /// <summary>
+        /// Joins the room via the referee hub first (when connected), then via the regular lazer client.
+        /// The hub join must come first; a hub failure simply means we are not a referee of this room,
+        /// in which case the regular join proceeds either way.
+        /// </summary>
+        private async void joinWithRefereeFirst(osu.Game.Online.Rooms.Room joinTarget, string? password, osu.Game.Online.Rooms.Room originalRoom,
+                                                Action<osu.Game.Online.Rooms.Room> onSuccess, Action<string, Exception?> onFailure)
+        {
+            if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected && joinTarget.RoomID != null)
             {
-                if (result.IsCompletedSuccessfully)
+                try
                 {
-                    onlineState.EnsureSpectateAsync().FireAndForget();
-                    onSuccess(room);
+                    await refereeAuth.JoinRoomAsync(joinTarget.RoomID.Value).ConfigureAwait(false);
+                    Logger.Log($"Joined room {joinTarget.RoomID} via the referee hub.");
                 }
-                else
+                catch (Exception ex)
                 {
-                    Exception? exception = result.Exception?.AsSingular();
+                    // Not a referee of this room (or the hub call failed); fall through to the regular join.
+                    Logger.Log($"Referee hub join for room {joinTarget.RoomID} failed, joining regularly: {ex.Message}");
+                    Logging.LogError(ex);
+                }
+            }
+
+            try
+            {
+                await client.JoinRoom(joinTarget, password).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Schedule(() =>
+                {
+                    Exception? exception = ex is AggregateException aggregate ? aggregate.AsSingular() : ex;
 
                     if (exception?.GetHubExceptionMessage() is string message)
                         onFailure(message, exception);
                     else
                         onFailure($"Failed to join multiplayer room. {exception?.Message}", exception);
-                }
-            }));
+                });
+                return;
+            }
+
+            Schedule(() =>
+            {
+                onlineState.EnsureSpectateAsync().FireAndForget();
+                onSuccess(originalRoom);
+            });
         }
 
         public void OpenCopy(osu.Game.Online.Rooms.Room room)
@@ -899,9 +934,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
             chatContainer.Clear();
             roomChat?.Dispose();
-            roomChat = new MatchChatDisplay(apiRoom, leaveChannelOnDispose: false)
+            roomChat = new TournamentMatchChatDisplay(true)
             {
-                RelativeSizeAxes = Axes.Both
+                // Fill the container: Height is relative while RelativeSizeAxes covers Y
+                // (the constructor default of 144 is absolute pixels for overlay usage).
+                RelativeSizeAxes = Axes.Both,
+                Height = 1,
             };
             chatContainer.Add(roomChat);
         }

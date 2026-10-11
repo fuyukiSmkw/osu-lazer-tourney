@@ -126,8 +126,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             AddInternal(OnlineState);
 
             visualAudioSettings = new VisualAudioSettingsController();
+            dependencies.Cache(visualAudioSettings);
             // Must be added to the hierarchy, otherwise dependency injection never runs.
             AddInternal(visualAudioSettings);
+
+            var refereeAuth = new RefereeAuthController();
+            dependencies.Cache(refereeAuth);
+            // Must be added to the hierarchy, otherwise dependency injection never runs.
+            AddInternal(refereeAuth);
             var ongoingOperationTracker = new OngoingOperationTracker();
             dependencies.Cache(ongoingOperationTracker);
             AddInternal(ongoingOperationTracker);
@@ -162,6 +168,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 // Brackets saved before VisualAudioSettings existed fall back to the built-in defaults.
                 // Resolved here (rather than at apply time) so migration saves persist it.
                 ladder.VisualAudioSettings ??= new VisualAudioSettings();
+                ladder.RulesetSettings ??= new RulesetSettings();
 
                 var resolvedRuleset = ladder.Ruleset.Value != null
                     ? rulesetStore.GetRuleset(ladder.Ruleset.Value.ShortName)
@@ -250,6 +257,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 dependencies.Cache(ladder);
 
                 visualAudioSettings.ApplyFromBracket(ladder.VisualAudioSettings);
+                visualAudioSettings.ApplyRulesetFromBracket(ladder.RulesetSettings);
 
                 bracketLoadTaskCompletionSource.SetResult(true);
 
@@ -438,6 +446,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // Snapshot live settings first, so saves persist them and the
             // unsaved-changes detection picks up slider/switch edits.
             visualAudioSettings.SnapshotToBracket(ladder.VisualAudioSettings ??= new VisualAudioSettings());
+            visualAudioSettings.SnapshotRulesetToBracket(ladder.RulesetSettings ??= new RulesetSettings());
 
             foreach (var r in ladder.Rounds)
                 r.Matches = ladder.Matches.Where(p => p.Round.Value == r).Select(p => p.ID).ToList();

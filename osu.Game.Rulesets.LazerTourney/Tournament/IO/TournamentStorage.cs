@@ -46,5 +46,42 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         }
 
         public IEnumerable<string> ListTournaments() => AllTournaments.GetDirectories(string.Empty).Order(StringComparer.CurrentCultureIgnoreCase);
+
+        /// <summary>
+        /// OAuth client ID for the referee hub API.
+        /// </summary>
+        public Bindable<string> RefereeClientId => TournamentConfigManager.GetBindable<string>(StorageConfig.RefereeClientId);
+
+        /// <summary>
+        /// OAuth client secret for the referee hub API.
+        /// </summary>
+        public Bindable<string> RefereeClientSecret => TournamentConfigManager.GetBindable<string>(StorageConfig.RefereeClientSecret);
+
+        /// <summary>
+        /// Referee hub API access token.
+        /// </summary>
+        public string RefereeAccessToken
+        {
+            get => TournamentConfigManager.Get<string>(StorageConfig.RefereeAccessToken);
+            set => TournamentConfigManager.SetValue(StorageConfig.RefereeAccessToken, value);
+        }
+
+        /// <summary>
+        /// Referee hub API refresh token.
+        /// </summary>
+        public string RefereeRefreshToken
+        {
+            get => TournamentConfigManager.Get<string>(StorageConfig.RefereeRefreshToken);
+            set => TournamentConfigManager.SetValue(StorageConfig.RefereeRefreshToken, value);
+        }
+
+        /// <summary>
+        /// Referee hub API access token expiry as unix seconds.
+        /// </summary>
+        public long RefereeExpiresAt
+        {
+            get => TournamentConfigManager.Get<long>(StorageConfig.RefereeExpiresAt);
+            set => TournamentConfigManager.SetValue(StorageConfig.RefereeExpiresAt, value);
+        }
     }
 }

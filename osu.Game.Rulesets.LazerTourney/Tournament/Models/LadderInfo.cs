@@ -30,6 +30,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         public VisualAudioSettings? VisualAudioSettings;
 
+        /// <summary>
+        /// Per-ruleset gameplay settings for the tournament. Null for brackets saved
+        /// before this object existed; the built-in defaults apply in that case.
+        /// </summary>
+        public RulesetSettings? RulesetSettings;
+
         [JsonIgnore] // updated manually in TournamentGameBase
         public Bindable<TournamentMatch?> CurrentMatch = new Bindable<TournamentMatch?>();
 
