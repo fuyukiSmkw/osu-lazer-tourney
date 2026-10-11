@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using osu.Framework;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -27,7 +28,12 @@ using osu.Game.Overlays.Dialog;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.Mania.Configuration;
+using osu.Game.Rulesets.Mania.UI;
+using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
+using osu.Game.Rulesets.Taiko.Configuration;
+using osu.Game.Rulesets.UI;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -70,6 +76,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
+
+        [Resolved]
+        private VisualAudioSettingsController visualAudioSettings { get; set; } = null!;
 
         [Resolved]
         private FrameworkConfigManager frameworkConfig { get; set; } = null!;
@@ -139,6 +148,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             left.AddRange(refereeApiSection());
 
             var right = new List<Drawable>(visualAudioSettingsSection());
+            right.AddRange(rulesetSettingsSection());
 
             fillFlow.Children = new Drawable[]
             {
@@ -219,8 +229,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             yield return new LabelledDropdown<RulesetInfo?>(padded: true)
             {
                 Label = "Ruleset",
-                Description = "Decides what stats are displayed and which ranks are retrieved for players. This requires a restart to reload data for an existing bracket.",
-                Items = rulesets.AvailableRulesets,
+                Description = "Decides what stats are displayed and which ranks are retrieved for players. Only rulesets available online (usable in multiplayer rooms) are listed. This requires a restart to reload data for an existing bracket.",
+                // OnlineID < 0 means local-only (e.g. custom rulesets): the server cannot resolve them in multiplayer rooms.
+                // This intentionally does not hardcode the official rulesets, so private servers with more rulesets keep working.
+                Items = rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0),
                 Current = LadderInfo.Ruleset,
                 DropdownWidth = 0.5f,
             };
@@ -468,6 +480,115 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             {
                 Text = text,
                 Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
+            };
+        }
+
+        /// <summary>
+        /// Builds the per-ruleset gameplay settings cell below Visual &amp; Audio.
+        /// Only the selected ruleset's settings are shown; the other rulesets'
+        /// settings are still saved, loaded and restored, just hidden.
+        /// Controls bind the lazer settings directly, so edits apply live;
+        /// values are persisted to the bracket file on save.
+        /// </summary>
+        private IEnumerable<Drawable> rulesetSettingsSection()
+        {
+            yield return new OsuSpriteText
+            {
+                Text = "Ruleset settings",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            foreach (var drawable in rulesetSettingsControls())
+                yield return drawable;
+        }
+
+        private IEnumerable<Drawable> rulesetSettingsControls()
+        {
+            switch (LadderInfo.Ruleset.Value?.ShortName)
+            {
+                case "osu" when visualAudioSettings.OsuRulesetConfig is { } config:
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Snaking in sliders",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Snaking out sliders",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Hit animations",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.HitAnimations),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Cursor trail",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Cursor ripples",
+                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples),
+                    };
+                    yield return new LabelledDropdown<PlayfieldBorderStyle>(padded: true)
+                    {
+                        Label = "Playfield border style",
+                        Items = Enum.GetValues<PlayfieldBorderStyle>(),
+                        Current = config.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle),
+                    };
+                    yield break;
+
+                case "taiko" when visualAudioSettings.TaikoRulesetConfig is { } config:
+                    yield return new LabelledDropdown<TaikoTouchControlScheme>(padded: true)
+                    {
+                        Label = "Touch control scheme",
+                        Items = Enum.GetValues<TaikoTouchControlScheme>(),
+                        Current = config.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Hit animations",
+                        Current = config.GetBindable<bool>(TaikoRulesetSetting.HitAnimations),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Rate-adjusted hit animations",
+                        Current = config.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation),
+                    };
+                    yield break;
+
+                case "mania" when visualAudioSettings.ManiaRulesetConfig is { } config:
+                    yield return new LabelledDropdown<ManiaScrollingDirection>(padded: true)
+                    {
+                        Label = "Scrolling direction",
+                        Items = Enum.GetValues<ManiaScrollingDirection>(),
+                        Current = config.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection),
+                    };
+                    yield return new SettingsSlider<double>
+                    {
+                        LabelText = "Scroll speed",
+                        Current = config.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed),
+                        KeyboardStep = 1,
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Timing-based note colouring",
+                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring),
+                    };
+                    yield return new LabelledSwitchButton
+                    {
+                        Label = "Touch overlay",
+                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay),
+                    };
+                    yield break;
+            }
+
+            yield return new OsuSpriteText
+            {
+                Text = "No configurable settings for this ruleset.",
+                Font = OsuFont.GetFont(size: 14),
             };
         }
 

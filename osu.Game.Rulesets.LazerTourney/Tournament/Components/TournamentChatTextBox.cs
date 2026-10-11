@@ -33,6 +33,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private static readonly FieldInfo? selection_end_field =
             typeof(TextBox).GetField("selectionEnd", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        private Func<KeyDownEvent, bool> historyOnKeyDown = null;
+
         // HistoryTextBox keeps its commit history in a private per-instance queue.
         // Point every tournament send box at one shared queue so up/down recalls
         // commits from any of them. Capacity matches the HistoryTextBox default.
@@ -45,6 +47,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         public TournamentChatTextBox()
         {
             message_history_field?.SetValue(this, shared_history);
+
+            nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown", BindingFlags.InvokeMethod | BindingFlags.NonPublic | BindingFlags.Instance).MethodHandle.GetFunctionPointer();
+            historyOnKeyDown = (Func<KeyDownEvent, bool>)Activator.CreateInstance(typeof(Func<KeyDownEvent, bool>), this, ptr);
         }
 
         // Pending multi-candidate completion: candidates stay fixed while cycling,
@@ -66,11 +71,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             // Skip base(ChatTextBox).OnKeyDown because it returns false for up and down
             if (HasFocus && (e.Key == Key.Up || e.Key == Key.Down))
-            {
-                nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown", BindingFlags.InvokeMethod | BindingFlags.NonPublic | BindingFlags.Instance).MethodHandle.GetFunctionPointer();
-                var f = (Func<KeyDownEvent, bool>)Activator.CreateInstance(typeof(Func<KeyDownEvent, bool>), this, ptr);
-                return f(e);
-            }
+                return historyOnKeyDown(e);
 
             if (pendingCandidates != null)
             {
