@@ -8,6 +8,7 @@ using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Input.Events;
+using osu.Game.Graphics.UserInterface;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
@@ -46,6 +47,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             {
                 handleTab();
                 return true;
+            }
+
+            // Skip base(ChatTextBox).OnKeyDown because it returns false for up and down
+            if (e.Key == Key.Up || e.Key == Key.Down)
+            {
+                nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown").MethodHandle.GetFunctionPointer();
+                var f = (Func<KeyDownEvent, bool>)Activator.CreateInstance(typeof(Func<KeyDownEvent, bool>), this, ptr);
+                return f(e);
             }
 
             if (pendingCandidates != null)
