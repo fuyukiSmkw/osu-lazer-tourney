@@ -593,7 +593,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands
         }
 
         private static byte? parseSlot(string? text)
-            => byte.TryParse(text, out byte slot) && slot >= 1 && slot <= 16 ? slot : null;
+            => byte.TryParse(text, out byte slot) && slot >= 1 && slot <= 16 ? ++slot : null;
 
         private static string? parseTeam(string? text)
         {
