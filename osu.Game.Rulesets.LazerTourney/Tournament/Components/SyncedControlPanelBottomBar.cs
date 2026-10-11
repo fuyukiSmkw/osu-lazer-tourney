@@ -261,17 +261,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         }
 
         private void notify(string text, bool important = false)
-        {
-            if (notifications != null)
-            {
-                if (important)
-                    notifications.Post(new TournamentNotification { Text = text, IsImportant = true });
-                else
-                    notifications.Post(new TournamentNotification { Text = text, Transient = true });
-            }
-            else
-                channel.Value?.AddNewMessages(new ErrorMessage(text));
-        }
+            => ChatNotifier.Notify(notifications, channel.Value, text, important);
 
         #endregion Commands
 

@@ -12,6 +12,7 @@ using osu.Game.Graphics.UserInterface;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
+using osu.Game.Utils;
 using osuTK.Input;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
@@ -32,6 +33,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private static readonly FieldInfo? selection_end_field =
             typeof(TextBox).GetField("selectionEnd", BindingFlags.Instance | BindingFlags.NonPublic);
 
+        // HistoryTextBox keeps its commit history in a private per-instance queue.
+        // Point every tournament send box at one shared queue so up/down recalls
+        // commits from any of them. Capacity matches the HistoryTextBox default.
+        // (Field name dependency on upstream; failure silently keeps per-box history.)
+        private static readonly LimitedCapacityQueue<string> shared_history = new(100);
+
+        private static readonly FieldInfo? message_history_field =
+            typeof(HistoryTextBox).GetField("messageHistory", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        public TournamentChatTextBox()
+        {
+            message_history_field?.SetValue(this, shared_history);
+        }
+
         // Pending multi-candidate completion: candidates stay fixed while cycling,
         // the current one is selected from pendingStart on.
         private List<string>? pendingCandidates;
@@ -50,9 +65,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             }
 
             // Skip base(ChatTextBox).OnKeyDown because it returns false for up and down
-            if (e.Key == Key.Up || e.Key == Key.Down)
+            if (HasFocus && (e.Key == Key.Up || e.Key == Key.Down))
             {
-                nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown").MethodHandle.GetFunctionPointer();
+                nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown", BindingFlags.InvokeMethod | BindingFlags.NonPublic | BindingFlags.Instance).MethodHandle.GetFunctionPointer();
                 var f = (Func<KeyDownEvent, bool>)Activator.CreateInstance(typeof(Func<KeyDownEvent, bool>), this, ptr);
                 return f(e);
             }

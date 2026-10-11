@@ -26,12 +26,12 @@ using osu.Game.Online.API;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Multiplayer.MatchTypes.TeamVersus;
 using osu.Game.Online.Rooms;
+using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup;
 using osu.Game.Screens.OnlinePlay;
 using osu.Game.Screens.OnlinePlay.Lounge;
 using osu.Game.Screens.OnlinePlay.Lounge.Components;
-using osu.Game.Screens.OnlinePlay.Match.Components;
 using osu.Game.Screens.OnlinePlay.Multiplayer;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Match;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Match.Playlist;
@@ -119,7 +119,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
         private Container chatContainer = null!;
         private ParticipantsList participantsList = null!;
         private MultiplayerPlaylist multiplayerPlaylist = null!;
-        private MatchChatDisplay? roomChat;
+        private TournamentMatchChatDisplay? roomChat;
         private MultiplayerRoomPanel? roomPanel;
         private TourneyButton rejoinButton = null!;
         private TourneyButton editRoomButton = null!;
@@ -934,9 +934,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Room
 
             chatContainer.Clear();
             roomChat?.Dispose();
-            roomChat = new MatchChatDisplay(apiRoom, leaveChannelOnDispose: false)
+            roomChat = new TournamentMatchChatDisplay(true)
             {
-                RelativeSizeAxes = Axes.Both
+                // Fill the container: Height is relative while RelativeSizeAxes covers Y
+                // (the constructor default of 144 is absolute pixels for overlay usage).
+                RelativeSizeAxes = Axes.Both,
+                Height = 1,
             };
             chatContainer.Add(roomChat);
         }
