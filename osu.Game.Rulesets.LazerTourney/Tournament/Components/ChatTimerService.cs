@@ -89,7 +89,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             RemainingSeconds.Value = remaining;
 
-            if (remaining <= 5 || remaining == 10)
+            if (remaining == 5 || remaining == 10)
                 postToChat($"Countdown: {remaining}");
             else if (remaining % 30 == 0)
                 postToChat($"Countdown: {remaining / 60}:{remaining % 60:D2}");
