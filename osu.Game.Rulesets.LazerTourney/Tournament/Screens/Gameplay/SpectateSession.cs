@@ -400,6 +400,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         /// </summary>
         public void ResetSpectate()
         {
+            // Back to room-following first so globals snap to the live item;
+            // Assign below re-enters spectating right away when still playing.
+            musicController.ExitSpectatingToRoom();
             teardownVisuals();
             stopAllWatches();
 
@@ -504,16 +507,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 return;
 
             // A new match clears previous results/last frames (kept until now).
+            // Exit to room-following first so globals snap to the new item,
+            // then Assign re-enters spectating and freezes onto it.
+            musicController.ExitSpectatingToRoom();
             teardownVisuals();
-            musicController.MusicControlSuspended.Value = true;
             Assign(force: true);
         });
 
+        /// <summary>
+        /// Tries to enter the spectating freeze when a match is underway.
+        /// Never exits it: results, aborts and lobby returns keep showing the
+        /// spectated item until reset or the next <c>LoadRequested</c>.
+        /// </summary>
         private void updateMusicSuspend()
         {
             var room = multiplayerClient.Room;
 
-            musicController.MusicControlSuspended.Value = room is { State: MultiplayerRoomState.WaitingForLoad or MultiplayerRoomState.Playing };
+            if (room is { State: MultiplayerRoomState.WaitingForLoad or MultiplayerRoomState.Playing })
+                musicController.EnterSpectating();
         }
 
         #endregion
@@ -843,6 +854,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (spectatorClient.WatchedUserStates.TryGetValue(userId, out SpectatorState state) && state.State == SpectatedUserState.Playing)
                     startGameplay(userId, state);
             }
+
+            // Download finished mid-match while in room-following silence: freeze onto the item now.
+            updateMusicSuspend();
         }
 
         private void onBeatmapAvailabilityChanged(ValueChangedEvent<BeatmapAvailability> e)
@@ -1265,7 +1279,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         {
             teardownVisuals();
             stopAllWatches();
-            updateMusicSuspend();
+
+            // Room left while following or spectating: keep the current beatmap playing (idle spec).
+            // Showcase playback (InShowcase) is untouched here.
+            if (musicController.State.Value is TournamentMusicState.InRoom or TournamentMusicState.Spectating)
+                musicController.EnterIdle();
         }
 
         protected override void Dispose(bool isDisposing)
