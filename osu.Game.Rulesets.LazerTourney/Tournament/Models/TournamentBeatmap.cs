@@ -33,6 +33,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
 
         public IRulesetInfo Ruleset { get; set; } = new APIRuleset();
 
+        public BeatmapOnlineStatus Status { get; set; }
+
         public TournamentBeatmap()
         {
         }
@@ -50,6 +52,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
             EndTimeObjectCount = beatmap.EndTimeObjectCount;
             TotalObjectCount = beatmap.TotalObjectCount;
             Ruleset = beatmap.Ruleset;
+            Status = beatmap.Status;
         }
 
         public bool Equals(IBeatmapInfo? other) => other is TournamentBeatmap b && this.MatchesOnlineID(b);
