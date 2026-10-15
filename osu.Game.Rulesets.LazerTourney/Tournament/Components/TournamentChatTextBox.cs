@@ -7,8 +7,10 @@ using System.Linq;
 using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics.UserInterface;
+using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Game.Graphics.UserInterface;
+using osu.Game.Input.Bindings;
 using osu.Game.Online.Chat;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
@@ -60,6 +62,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         private int selectionStart => (int?)selection_start_field?.GetValue(this) ?? 0;
         private int selectionEnd => (int?)selection_end_field?.GetValue(this) ?? 0;
+
+        /// <summary>
+        /// Keep draft text on back (escape), matching regular text boxes.
+        /// The default <see cref="FocusedTextBox"/> behaviour clears the text first
+        /// and only releases focus on the second press.
+        /// </summary>
+        protected override bool ClearTextOnBackKey => false;
+
+        public override bool OnPressed(KeyBindingPressEvent<GlobalAction> e)
+        {
+            // FocusedTextBox disables the framework-level escape handling and routes
+            // escape through GlobalAction.Back instead, so release focus here to match
+            // TextBox. Consume the event so the back press does not leak to screens.
+            if (!e.Repeat && HasFocus && e.Action == GlobalAction.Back)
+            {
+                pendingCandidates = null;
+                KillFocus();
+                return true;
+            }
+
+            return base.OnPressed(e);
+        }
 
         protected override bool OnKeyDown(KeyDownEvent e)
         {

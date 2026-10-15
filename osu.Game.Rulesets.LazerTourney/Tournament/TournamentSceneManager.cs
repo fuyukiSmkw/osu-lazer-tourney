@@ -363,6 +363,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             protected override bool OnKeyDown(KeyDownEvent e)
             {
+                // Ignore keys pressed with modifiers so typing capitals (Shift + letter)
+                // in chat or other text boxes does not trigger screen shortcuts.
+                if (e.ShiftPressed || e.ControlPressed || e.AltPressed || e.SuperPressed)
+                    return false;
+
                 if (e.Key == shortcutKey)
                 {
                     TriggerClick();

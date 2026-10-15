@@ -2,7 +2,6 @@
 
 > Architecture overview for agents. Read this before changing code. When touching multiplayer/spectating, always compare against upstream `../osu` (the osu!lazer codebase + `osu.Game.Tournament`).
 >
-> Chinese version: `AGENTS.zh_CN.md`.
 > Comments/strings in code must be written in English (except for existing/reusable localisations).
 
 ## 0. Goal in one sentence
@@ -39,7 +38,7 @@ osu-lazer-tourney/
 ```
 
 - Target framework `net10.0`; references `../../osu/osu.Game` and `../../osu/osu.Game.Tournament` only (see `osu.Game.Rulesets.LazerTourney.csproj`). It must **never** reference the Osu/Taiko/Mania ruleset assemblies: `RulesetStore` scans our dll with `GetTypes()`, which resolves signature-level references eagerly, so any field/signature/attribute naming those assemblies breaks plugin loading when they resolve late (dev builds, custom storage locations). Ruleset-specific settings are handled fully dynamically via `Tournament/Models/RulesetSettingDescriptors.cs` (string table + runtime-discovered enum types, never named statically) — keep it that way, guarded by `Tests/Settings/RulesetAssemblyIsolationTest.cs`.
-- Local dev loop: clone `../osu` into the parent directory first, then run `./UseLocalOsu.sh` (`UseLocalOsu.ps1` on Windows), then `dotnet build -c Release`.
+- Local dev loop: clone `../osu` into the parent directory first, then run `./UseLocalOsu.sh` (`UseLocalOsu.ps1` on Windows), then `dotnet build`.
 - Storage isolation: `TournamentStorage : WrappedStorage` keeps bracket data under `tournaments-lazer/<current tournament>/` (upstream uses `tournaments/`). **Never** mix with the upstream tournament directory. Referee OAuth client id/secret/tokens are also stored in the shared ini via `TournamentConfigManager` and **never enter bracket.json**.
 
 ## 2. Boot chain (how the plugin parasitises lazer)
