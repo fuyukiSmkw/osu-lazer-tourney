@@ -2,12 +2,14 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System.Linq;
+using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
+using osu.Game.Overlays;
 using osuTK;
 using osuTK.Graphics;
 
@@ -19,11 +21,30 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
     /// </summary>
     public partial class ControlPanel : Container
     {
+        [Resolved]
+        private OverlayColourProvider colourProvider { get; set; } = null!;
+
         private readonly FillFlowContainer buttons;
         private readonly FillFlowContainer scrollFlow;
         private readonly FillFlowContainer bottomBarFlow;
+        private readonly Separator topSeparator;
+        private readonly Separator bottomSeparator;
 
         protected override Container<Drawable> Content => buttons;
+
+        /// <summary>
+        /// Whether to show fixed separator lines between the scrollable area and the pinned sections,
+        /// so the scrollable region is visually distinguishable. Off by default.
+        /// </summary>
+        public bool ShowScrollSeparators
+        {
+            get => topSeparator.Alpha > 0;
+            set
+            {
+                topSeparator.Alpha = value ? 1 : 0;
+                bottomSeparator.Alpha = value ? 1 : 0;
+            }
+        }
 
         /// <summary>
         /// Content placed below the main <see cref="Content"/>.
@@ -69,54 +90,76 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 RelativeSizeAxes = Axes.Both,
                 Children = new Drawable[]
                 {
-                new Box
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Colour = new Color4(54, 54, 54, 255)
-                },
-                new TournamentSpriteText
-                {
-                    Anchor = Anchor.TopCentre,
-                    Origin = Anchor.TopCentre,
-                    Text = "Control Panel",
-                    Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 22)
-                },
-                new Container
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Padding = new MarginPadding { Top = 35 },
-                    Child = new GridContainer
+                    new Box
                     {
                         RelativeSizeAxes = Axes.Both,
-                        ColumnDimensions = new[]
+                        Colour = new Color4(54, 54, 54, 255)
+                    },
+                    new TournamentSpriteText
+                    {
+                        Anchor = Anchor.TopCentre,
+                        Origin = Anchor.TopCentre,
+                        Text = "Control Panel",
+                        Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 22)
+                    },
+                    new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Padding = new MarginPadding { Top = 22 },
+                        Child = new GridContainer
                         {
-                            new Dimension(),
-                        },
-                        RowDimensions = new[]
-                        {
-                            new Dimension(GridSizeMode.AutoSize),
-                            new Dimension(),
-                            new Dimension(GridSizeMode.AutoSize),
-                        },
-                        Content = new Drawable[][]
-                        {
-                            new Drawable[]
+                            RelativeSizeAxes = Axes.Both,
+                            ColumnDimensions = new[]
                             {
-                                buttons = new FillFlowContainer
-                                {
-                                    RelativeSizeAxes = Axes.X,
-                                    AutoSizeAxes = Axes.Y,
-                                    Padding = new MarginPadding(5),
-                                    Direction = FillDirection.Vertical,
-                                    Spacing = new Vector2(0, 5f),
-                                },
+                                new Dimension(),
                             },
-                            new Drawable[]
+                            RowDimensions = new[]
                             {
-                                new OsuScrollContainer
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(),
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(GridSizeMode.AutoSize),
+                            },
+                            Content = new Drawable[][]
+                            {
+                                new Drawable[]
                                 {
-                                    RelativeSizeAxes = Axes.Both,
-                                    Child = scrollFlow = new FillFlowContainer
+                                    buttons = new FillFlowContainer
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        AutoSizeAxes = Axes.Y,
+                                        Padding = new MarginPadding(5),
+                                        Direction = FillDirection.Vertical,
+                                        Spacing = new Vector2(0, 5f),
+                                    },
+                                },
+                                new Drawable[]
+                                {
+                                    topSeparator = new Separator(),
+                                },
+                                new Drawable[]
+                                {
+                                    new OsuScrollContainer
+                                    {
+                                        RelativeSizeAxes = Axes.Both,
+                                        Child = scrollFlow = new FillFlowContainer
+                                        {
+                                            RelativeSizeAxes = Axes.X,
+                                            AutoSizeAxes = Axes.Y,
+                                            Padding = new MarginPadding(5),
+                                            Direction = FillDirection.Vertical,
+                                            Spacing = new Vector2(0, 5f),
+                                        },
+                                    },
+                                },
+                                new Drawable[]
+                                {
+                                    bottomSeparator = new Separator(),
+                                },
+                                new Drawable[]
+                                {
+                                    bottomBarFlow = new FillFlowContainer
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         AutoSizeAxes = Axes.Y,
@@ -126,20 +169,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                     },
                                 },
                             },
-                            new Drawable[]
-                            {
-                                bottomBarFlow = new FillFlowContainer
-                                {
-                                    RelativeSizeAxes = Axes.X,
-                                    AutoSizeAxes = Axes.Y,
-                                    Padding = new MarginPadding(5),
-                                    Direction = FillDirection.Vertical,
-                                    Spacing = new Vector2(0, 5f),
-                                },
-                            },
                         },
                     },
-                },
                 },
             };
         }
@@ -151,6 +182,27 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 RelativeSizeAxes = Axes.X;
                 Height = height;
                 AlwaysPresent = true;
+            }
+        }
+
+        /// <summary>
+        /// Thin fixed horizontal line separating the scrollable area from the pinned sections.
+        /// Hidden (alpha 0) unless <see cref="ShowScrollSeparators"/> is enabled.
+        /// </summary>
+        private partial class Separator : CompositeDrawable
+        {
+            public Separator()
+            {
+                RelativeSizeAxes = Axes.X;
+                Height = 1;
+                Alpha = 0;
+                Margin = new MarginPadding { Horizontal = 5 };
+
+                InternalChild = new Box
+                {
+                    RelativeSizeAxes = Axes.Both,
+                    Colour = OsuColour.Gray(0.6f),
+                };
             }
         }
     }

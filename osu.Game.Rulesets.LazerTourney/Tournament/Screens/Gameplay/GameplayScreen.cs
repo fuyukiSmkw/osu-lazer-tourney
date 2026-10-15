@@ -26,6 +26,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
     {
         private readonly BindableBool warmup = new BindableBool();
 
+        private readonly BindableBool showChat = new BindableBool();
+        private readonly BindableBool showControlPanelChat = new BindableBool(true);
+
         public readonly Bindable<TourneyState> State = new Bindable<TourneyState>();
         private TournamentOnlineState onlineState = null!;
 
@@ -94,7 +97,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     Anchor = Anchor.BottomCentre,
                     Origin = Anchor.TopCentre,
                 },
-                new SyncedControlPanel
+                new SyncedControlPanel(showControlPanelChat)
                 {
                     Children = new Drawable[]
                     {
@@ -106,10 +109,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                         chatToggle = new LabelledSwitchButton
                         {
                             Label = "Show chat",
+                            Current = showChat,
                         },
                         new SettingsSlider<int>
                         {
-                            LabelText = "Chroma width",
+                            LabelText = "Cell width",
                             Current = LadderInfo.ChromaKeyWidth,
                             KeyboardStep = 1,
                         },
@@ -139,8 +143,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             spectateSession.ScoreDisplay = scoreDisplay;
 
-            State.BindValueChanged(state => chatToggle.Current.Value = State.Value == TourneyState.Idle, true);
-            chatToggle.Current.BindValueChanged(v => State.Value = v.NewValue ? TourneyState.Idle : TourneyState.Playing);
+            State.BindValueChanged(state => showChat.Value = State.Value == TourneyState.Idle, true);
+            showChat.BindValueChanged(v =>
+            {
+                State.Value = v.NewValue ? TourneyState.Idle : TourneyState.Playing;
+                showControlPanelChat.Value = !v.NewValue;
+            }, true);
 
             LadderInfo.ChromaKeyWidth.BindValueChanged(width => playOuter.Width = width.NewValue, true);
 

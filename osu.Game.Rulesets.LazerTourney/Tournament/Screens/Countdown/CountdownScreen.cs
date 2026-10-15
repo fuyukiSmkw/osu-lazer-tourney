@@ -50,7 +50,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Countdown
                         Font = OsuFont.TorusAlternate.With(size: 100, weight: FontWeight.Bold, fixedWidth: true),
                     },
                 },
-                new ControlPanel
+                new SyncedControlPanel(showChatHistory: true)
                 {
                     Children = new Drawable[]
                     {

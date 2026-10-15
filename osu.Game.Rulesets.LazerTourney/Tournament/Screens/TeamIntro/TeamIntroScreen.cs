@@ -30,7 +30,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.TeamIntro
                 mainContainer = new Container
                 {
                     RelativeSizeAxes = Axes.Both,
-                }
+                },
+                new SyncedControlPanel(showChatHistory: true),
             };
         }
 
