@@ -25,13 +25,14 @@ using osu.Game.Online.Rooms;
 using osu.Game.Online.Spectator;
 using osu.Game.Replays;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models.ModMultiplier;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
 using osu.Game.Screens.Play;
-using osu.Game.Screens.Play.Leaderboards;
 using osu.Game.Screens.Spectate;
 using osu.Game.Skinning;
 using osuTK.Graphics;
@@ -85,6 +86,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private TournamentMusicController musicController { get; set; } = null!;
 
         [Resolved]
+        private LadderInfo ladder { get; set; } = null!;
+
+        [Resolved]
         private Bindable<WorkingBeatmap> beatmap { get; set; } = null!;
 
         private readonly HashSet<int> watchedUsers = new HashSet<int>();
@@ -92,6 +96,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, SpectateCell> cellsByUser = new Dictionary<int, SpectateCell>();
         private readonly Dictionary<int, SpectatorPlayerClock> clocksByUser = new Dictionary<int, SpectatorPlayerClock>();
         private readonly Dictionary<int, Score> scoresByUser = new Dictionary<int, Score>();
+
+        /// <summary>
+        /// Playing-time mod snapshot per user, feeding provider weights. Unlike
+        /// <see cref="global::osu.Game.Online.Spectator.SpectatorScoreProcessor.Mods"/>, this is taken
+        /// from the final Playing state (same source as the cells) and never goes stale.
+        /// Survives score removal (fail/quit) so frozen totals keep the right weight.
+        /// </summary>
+        private readonly Dictionary<int, Mod[]> modsByUser = new Dictionary<int, Mod[]>();
         private readonly HashSet<int> seenBreak = new HashSet<int>();
         private readonly HashSet<int> comboSubscribed = new HashSet<int>();
         private Bindable<bool> preferNoVideo = null!;
@@ -116,8 +128,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private bool gameplayVisible;
 
         private HashSet<int> providerUserIds = new HashSet<int>();
-        private TournamentLeaderboardProvider? leaderboardProvider;
+        private WeightedTournamentLeaderboardProvider? leaderboardProvider;
         private bool leaderboardLoaded;
+
+        // Active custom mod-multiplier rule (ModMult) and whether the score display
+        // should bind the weight-adjusted totals. Resolved on every provider rebuild;
+        // every match start rebuilds (teardown clears the roster), so no mid-lobby refresh needed.
+        private ModMultRule activeMultiplierRule = ModMultRule.Empty;
+        private bool customMultiplierActive;
 
         private SkinnableSound breakSound = null!;
         private Bindable<bool> alwaysPlayFirstBreak = null!;
@@ -751,8 +769,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             };
 
             scoresByUser[userId] = score;
+            modsByUser[userId] = score.ScoreInfo.Mods;
             SpectatedItem ??= multiplayerClient.Room?.CurrentPlaylistItem.Clone();
             updateSpectatedScore();
+
+            // The snapshot above may be newer than what the provider weights with;
+            // recompute immediately so totals pick it up even before scores move.
+            leaderboardProvider?.RefreshWeights();
 
             // Captured so the deferred attachment below can detect a clock generation
             // change in between (teardown, master rebuild, new match). Attachments from
@@ -795,6 +818,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     clock.Seek(syncManager.CurrentMasterTime);
 
                 var area = new TournamentPlayerArea(userId, clock);
+
+                // Per-player custom multiplier for the cell HUD and results, evaluated once:
+                // mods are locked once the match starts so one weight lasts the whole play.
+                // Inactive rules evaluate to 1, which disables the adjustment entirely.
+                area.ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods);
 
                 clocksByUser[userId] = clock;
                 cell.AttachPlayArea(area);
@@ -1134,7 +1162,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             var users = room.Users.Where(u => assignedSet.Contains(u.UserID)).ToArray();
 
             int generation = clockGeneration;
-            var provider = new TournamentLeaderboardProvider(users);
+            var provider = new WeightedTournamentLeaderboardProvider(users);
+
+            resolveActiveMultiplierRule();
+            provider.WeightFunction = evaluateWeightFor;
 
             LoadComponentAsync(leaderboardProvider = provider, loaded =>
             {
@@ -1145,25 +1176,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     return;
                 }
 
-                AddInternal(loaded);
-                leaderboardLoaded = true;
-
-                foreach (var (userId, clock) in clocksByUser)
+                // Note: this callback runs after dependency load, but LoadComplete (which builds
+                // AdjustedTeamScores) only fires on the next update frame after AddInternal below.
+                // Everything requiring loaded state is therefore deferred to OnFirstLoad.
+                provider.OnFirstLoad = firstLoaded =>
                 {
-                    try
-                    {
-                        loaded.AddClock(userId, clock);
-                    }
-                    catch (ArgumentException)
-                    {
-                        // Clock for a user outside the provider's roster (reassigned since).
-                    }
-                }
+                    // Re-check: a teardown or rebuild may have landed in the gap before LoadComplete.
+                    // (Already added to the tree by the callback below; only finish the wiring here.)
+                    if (generation != clockGeneration || !ReferenceEquals(leaderboardProvider, firstLoaded))
+                        return;
 
-                foreach (int userId in watchedUsers)
-                    subscribeComboBreak(userId);
+                    leaderboardLoaded = true;
 
-                updateScoreBindings();
+                    foreach (var (userId, clock) in clocksByUser)
+                    {
+                        try
+                        {
+                            firstLoaded.AddClock(userId, clock);
+                        }
+                        catch (ArgumentException)
+                        {
+                            // Clock for a user outside the provider's roster (reassigned since).
+                        }
+                    }
+
+                    foreach (int userId in watchedUsers)
+                        subscribeComboBreak(userId);
+
+                    updateScoreBindings();
+                };
+
+                AddInternal(loaded);
             });
         }
 
@@ -1211,10 +1254,70 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // Rebinding an already-bound bindable throws, and the provider instance is replaced
             // on every rebuild (reset, new match). Unbind first so switching providers is safe.
             // UnbindBindings only removes BindTo links; display ValueChanged handlers are kept.
+            // With a custom rule active, bind the weight-adjusted totals instead of the raw ones.
+            // Binds only run on loaded providers (see OnFirstLoad), where both dictionaries are complete.
+            var totals = customMultiplierActive
+                ? leaderboardProvider!.AdjustedTeamScores
+                : leaderboardProvider!.TeamScores;
+
             ScoreDisplay.Team1Score.UnbindBindings();
             ScoreDisplay.Team2Score.UnbindBindings();
-            ScoreDisplay.Team1Score.BindTarget = leaderboardProvider!.TeamScores.First().Value;
-            ScoreDisplay.Team2Score.BindTarget = leaderboardProvider!.TeamScores.Last().Value;
+            ScoreDisplay.Team1Score.BindTarget = totals.First().Value;
+            ScoreDisplay.Team2Score.BindTarget = totals.Last().Value;
+        }
+
+        /// <summary>
+        /// Evaluates the active rule for a user, preferring the Playing-time snapshot taken in
+        /// <see cref="startGameplay"/> (same source as the cells) over the processor-side fallback.
+        /// Reads the live rule so no lambda replacement is needed on rule swaps.
+        /// </summary>
+        private double evaluateWeightFor(int userId, IReadOnlyList<Mod> fallbackMods)
+            => activeMultiplierRule.Evaluate(modsByUser.TryGetValue(userId, out var mods) ? mods : fallbackMods);
+
+        /// <summary>
+        /// Resolves the effective ModMult rule for the room's current playlist item:
+        /// the matching round beatmap's rule when non-empty, otherwise the round default.
+        /// </summary>
+        private void resolveActiveMultiplierRule()
+        {
+            customMultiplierActive = false;
+            activeMultiplierRule = ModMultRule.Empty;
+
+            try
+            {
+                var room = multiplayerClient.Room;
+                var round = ladder.CurrentMatch.Value?.Round.Value;
+
+                if (room == null || round == null)
+                    return;
+
+                var item = room.Playlist.FirstOrDefault(i => i.ID == room.Settings.PlaylistItemId);
+                int? rulesetId = ladder.Ruleset.Value?.OnlineID;
+
+                RoundBeatmap? map = item == null
+                    ? null
+                    : round.Beatmaps.FirstOrDefault(b => RoundBeatmap.Matches(item, b, rulesetId));
+
+                string source = ModMultRule.ResolveSource(map?.ModMultiplierRule, round.DefaultModMultiplierRule.Value);
+
+                if (string.IsNullOrWhiteSpace(source))
+                    return;
+
+                if (!ModMultRule.TryParse(source, out var rule, out string? error) || rule == null)
+                {
+                    Logger.Log($"Invalid custom mod multiplier rule, ignoring: {error}", LoggingTarget.Runtime, LogLevel.Debug);
+                    return;
+                }
+
+                activeMultiplierRule = rule;
+                customMultiplierActive = true;
+
+                Logger.Log($"Custom mod multiplier active (playlist item {item?.ID.ToString() ?? "none"}): {source}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to resolve custom mod multiplier rule: {ex.Message}", LoggingTarget.Runtime, LogLevel.Debug);
+            }
         }
 
         #endregion
@@ -1232,6 +1335,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             cellsByUser.Clear();
             clocksByUser.Clear();
             scoresByUser.Clear();
+            modsByUser.Clear();
             SpectatedItem = null;
             updateSpectatedScore();
             userMap.Clear();
@@ -1267,6 +1371,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             comboSubscribed.Clear();
             providerUserIds.Clear();
 
+            customMultiplierActive = false;
+            activeMultiplierRule = ModMultRule.Empty;
+
             // Release the score display so it never points at an expired provider,
             // and the next bind starts clean.
             ScoreDisplay?.Team1Score.UnbindBindings();
@@ -1301,29 +1408,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             // Matches SpectatorScreen.Dispose: stop every watch.
             fullTeardown();
-        }
-
-        /// <summary>
-        /// Leaderboard provider with combo-break observability for tournament spectating.
-        /// </summary>
-        private partial class TournamentLeaderboardProvider : MultiSpectatorLeaderboardProvider
-        {
-            public TournamentLeaderboardProvider(MultiplayerRoomUser[] users)
-                : base(users)
-            {
-            }
-
-            public bool TryGetCombo(int userId, out BindableInt? combo)
-            {
-                if (UserScores.TryGetValue(userId, out TrackedUserData data))
-                {
-                    combo = data.ScoreProcessor.Combo;
-                    return true;
-                }
-
-                combo = null;
-                return false;
-            }
         }
 
         #endregion

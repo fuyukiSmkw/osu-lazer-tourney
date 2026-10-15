@@ -25,6 +25,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         public readonly BindableInt ProtectCount = new BindableInt(0) { Default = 0, MinValue = 0, MaxValue = 5 };
 
+        /// <summary>
+        /// Default custom mod-multiplier rule for beatmaps in this round, as ModMult source text.
+        /// Empty means no custom multiplier (x1). Missing in old brackets, which read as empty.
+        /// Individual beatmaps may fully override this via <see cref="RoundBeatmap.ModMultiplierRule"/>.
+        /// </summary>
+        public readonly Bindable<string> DefaultModMultiplierRule = new Bindable<string>(string.Empty);
+
         [JsonProperty]
         public readonly BindableList<RoundBeatmap> Beatmaps = new BindableList<RoundBeatmap>();
 

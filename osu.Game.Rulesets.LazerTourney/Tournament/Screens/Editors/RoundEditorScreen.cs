@@ -134,6 +134,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                 Width = 0.33f,
                                 Current = Model.BestOf
                             },
+                            new ModMultiplierRuleEditor
+                            {
+                                Width = 0.66f,
+                                LabelText = "Default mod multiplier rule",
+                                EmptyHint = "Empty = x1 for all maps in this round.",
+                                Current = Model.DefaultModMultiplierRule,
+                            },
                             new SettingsButton
                             {
                                 Width = 0.2f,

@@ -58,6 +58,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// </summary>
         public Score? Score { get; private set; }
 
+        /// <summary>
+        /// Per-score custom multiplier for the loaded score, applied to the cell HUD and results.
+        /// Set before <see cref="LoadScore"/>; 1 means no adjustment.
+        /// </summary>
+        public double ScoreWeight { get; set; } = 1;
+
         [Resolved]
         private BeatmapManager beatmapManager { get; set; } = null!;
 
@@ -117,7 +123,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
             stack.Push(new MultiSpectatorPlayerLoader(Score, () =>
             {
-                var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock);
+                var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock)
+                {
+                    ScoreWeight = ScoreWeight,
+                };
                 player.OnGameplayStarted += () => OnGameplayStarted?.Invoke();
 
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
