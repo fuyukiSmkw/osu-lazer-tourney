@@ -36,7 +36,6 @@ using osu.Game.Screens.Edit.Components;
 using osu.Game.Screens.Edit.Timing;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Play.HUD;
-using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
@@ -255,8 +254,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                                 },
                             },
                         },
-                        new VisualSettings(),
-                        new AudioSettings(),
                     },
                 },
             });
