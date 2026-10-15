@@ -7,6 +7,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Input.Events;
 using osu.Framework.Testing;
 using osu.Framework.Threading;
@@ -229,6 +230,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             base.LoadComplete();
             SetScreen(typeof(SetupScreen));
+        }
+
+        protected override bool OnKeyDown(KeyDownEvent e)
+        {
+            // Global shortcut: focus the current screen's chat box for slash-command entry.
+            // Plain key only; a focused text box keeps normal input (it consumes the key first,
+            // and this guard covers the cases where the event still leaks through).
+            // RoomScreen is excluded: its lounge/joined structure hosts its own boxes.
+            if (!e.Repeat
+                && e.Key == Key.Slash
+                && !e.ShiftPressed && !e.ControlPressed && !e.AltPressed && !e.SuperPressed
+                && GetContainingInputManager()?.FocusedDrawable is not TextBox
+                && currentScreen is not RoomScreen
+                && currentScreen?.ChildrenOfType<TournamentChatTextBox>().FirstOrDefault() is { } chatBox)
+            {
+                chatBox.FocusForSlashEntry();
+                return true;
+            }
+
+            return base.OnKeyDown(e);
         }
 
         private float depth;

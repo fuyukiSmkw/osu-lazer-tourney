@@ -121,6 +121,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             base.OnFocusLost(e);
         }
 
+        /// <summary>
+        /// Focuses this box for slash-command entry (global <c>/</c> shortcut).
+        /// Existing text is left untouched with the caret moved to the end;
+        /// an empty box starts with a single <c>/</c>.
+        /// </summary>
+        public void FocusForSlashEntry()
+        {
+            pendingCandidates = null;
+
+            if (string.IsNullOrEmpty(Text))
+                Text = "/";
+
+            TakeFocus();
+            // TakeFocus is scheduled, so place the caret once focus has landed.
+            Scheduler.AddOnce(() => moveCaretTo(Text.Length));
+        }
+
         private void handleTab()
         {
             if (validatePending())
