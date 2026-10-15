@@ -5,6 +5,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Utils;
 using osu.Game.Beatmaps;
 using osu.Game.Configuration;
@@ -46,7 +47,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private OsuLogo logo = null!;
         private Background? idleBackground;
 
-        private const double idle_fade_in_duration = 300;
+        private const double first_fade_in_duration = 300;
+        private const double idle_fade_in_duration = 2000;
+        private const double idle_fade_out_duration = 2000;
+
+        private const double background_switch_internal = 10000;
+        private const int background_switch_delta_range = 1000;
 
         /// <summary>
         /// Cell height at which the idle logo and username sizes look right (2-4 players per team).
@@ -68,6 +74,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private Bindable<Skin> currentSkin = null!;
         private IBindable<WorkingBeatmap> beatmapCopy = null!;
         private int backgroundVersion;
+        private bool isFirstBackgroundLoad = true;
 
         /// <summary>
         /// Whether gameplay (or its result/last frame) is currently attached.
@@ -189,18 +196,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 var old = idleBackground;
                 bool first = old == null;
 
-                old?.FadeOut(400, Easing.OutQuint);
+                old?.FadeOut(idle_fade_out_duration, Easing.OutQuint);
                 old?.Expire();
 
                 // Depth must be assigned before adding to the hierarchy.
                 loaded.Depth = float.MaxValue;
                 AddInternal(idleBackground = loaded);
 
-                // Fade the background in together with the logo so neither pops in alone.
-                loaded.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
 
-                if (first)
-                    logoContainer.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
+                if (first) // first background is default background
+                {
+                    // Fade the background in together with the logo so neither pops in alone.
+                    loaded.FadeInFromZero(first_fade_in_duration, Easing.OutQuint);
+                    Scheduler.AddDelayed(updateBackground, RNG.Next(50, 500)); // quickly switch to seasonal
+                    logoContainer.FadeInFromZero(first_fade_in_duration, Easing.OutQuint);
+                }
+                else
+                {
+                    loaded.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
+                    Scheduler.AddDelayed(updateBackground, background_switch_internal + RNG.Next(-background_switch_delta_range, background_switch_delta_range)); // switch to next
+                }
             }));
         });
 
@@ -210,9 +225,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// "Background source" setting, then the default rotation. The seasonal list
         /// arrives asynchronously after login, so early calls fall back to the
         /// setting/default background until the list is available.
+        /// On first load, returns a default background immediately to avoid lag
+        /// when creating multiple cells (e.g. on Reset spectate).
         /// </summary>
         private Background createBackground()
         {
+            // On first load, return default background immediately to avoid
+            // the lag of creating multiple SeasonalBackground instances.
+            if (isFirstBackgroundLoad)
+            {
+                isFirstBackgroundLoad = false;
+                return new Background(defaultTextureName());
+            }
+
             Background? next = backgrounds.LoadNextBackground();
 
             // Unlike the main menu, the tournament client honours the configured source
