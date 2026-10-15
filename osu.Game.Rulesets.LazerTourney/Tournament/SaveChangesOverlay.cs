@@ -35,9 +35,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             InternalChild = new CircularContainer
             {
-                Anchor = Anchor.BottomRight,
-                Origin = Anchor.BottomRight,
-                Position = new Vector2(-5),
+                Anchor = Anchor.BottomLeft,
+                Origin = Anchor.BottomLeft,
+                Position = new Vector2(5, -5),
                 Masking = true,
                 AutoSizeAxes = Axes.Both,
                 Children = new Drawable[]
@@ -49,11 +49,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                     },
                     saveChangesButton = new TourneyButton
                     {
-                        Text = "Save Changes",
+                        Text = "Save",
                         RelativeSizeAxes = Axes.None,
-                        Width = 140,
-                        Height = 50,
-                        Margin = new MarginPadding(10),
+                        Width = 80,
+                        Height = 30,
+                        Margin = new MarginPadding(5),
                         Action = saveChanges,
                         Enabled = { Value = false },
                     },
