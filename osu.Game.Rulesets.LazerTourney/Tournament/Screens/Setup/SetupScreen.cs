@@ -13,6 +13,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
+using osu.Framework.Localisation;
 using osu.Framework.Threading;
 using osu.Game.Configuration;
 using osu.Game.Graphics;
@@ -27,13 +28,9 @@ using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
-using osu.Game.Rulesets.Mania.Configuration;
-using osu.Game.Rulesets.Mania.UI;
-using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
-using osu.Game.Rulesets.Taiko.Configuration;
-using osu.Game.Rulesets.UI;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -504,92 +501,102 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private IEnumerable<Drawable> rulesetSettingsControls()
         {
-            switch (LadderInfo.Ruleset.Value?.ShortName)
+            var settings = RulesetSettingDescriptors.ForShortName(LadderInfo.Ruleset.Value?.ShortName);
+
+            if (settings == null)
             {
-                case "osu" when visualAudioSettings.OsuRulesetConfig is { } config:
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Snaking in sliders",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Snaking out sliders",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Hit animations",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.HitAnimations),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Cursor trail",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Cursor ripples",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples),
-                    };
-                    yield return new LabelledDropdown<PlayfieldBorderStyle>(padded: true)
-                    {
-                        Label = "Playfield border style",
-                        Items = Enum.GetValues<PlayfieldBorderStyle>(),
-                        Current = config.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle),
-                    };
-                    yield break;
-
-                case "taiko" when visualAudioSettings.TaikoRulesetConfig is { } config:
-                    yield return new LabelledDropdown<TaikoTouchControlScheme>(padded: true)
-                    {
-                        Label = "Touch control scheme",
-                        Items = Enum.GetValues<TaikoTouchControlScheme>(),
-                        Current = config.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Hit animations",
-                        Current = config.GetBindable<bool>(TaikoRulesetSetting.HitAnimations),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Rate-adjusted hit animations",
-                        Current = config.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation),
-                    };
-                    yield break;
-
-                case "mania" when visualAudioSettings.ManiaRulesetConfig is { } config:
-                    yield return new LabelledDropdown<ManiaScrollingDirection>(padded: true)
-                    {
-                        Label = "Scrolling direction",
-                        Items = Enum.GetValues<ManiaScrollingDirection>(),
-                        Current = config.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection),
-                    };
-                    yield return new SettingsSlider<double>
-                    {
-                        LabelText = "Scroll speed",
-                        Current = config.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed),
-                        KeyboardStep = 1,
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Timing-based note colouring",
-                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Touch overlay",
-                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay),
-                    };
-                    yield break;
+                yield return new OsuSpriteText
+                {
+                    Text = "No configurable settings for this ruleset.",
+                    Font = OsuFont.GetFont(size: 14),
+                };
+                yield break;
             }
 
-            yield return new OsuSpriteText
+            object? manager = visualAudioSettings.GetRulesetConfig(LadderInfo.Ruleset.Value?.ShortName ?? string.Empty);
+
+            if (manager == null)
             {
-                Text = "No configurable settings for this ruleset.",
-                Font = OsuFont.GetFont(size: 14),
-            };
+                yield return rulesetUnavailableNote();
+                yield break;
+            }
+
+            foreach (var setting in settings)
+            {
+                Drawable? control = buildRulesetSettingControl(manager, setting);
+
+                if (control != null)
+                    yield return control;
+            }
+        }
+
+        private static OsuSpriteText rulesetUnavailableNote() => new OsuSpriteText
+        {
+            Text = "Ruleset settings are unavailable (official ruleset assemblies could not be loaded).",
+            Font = OsuFont.GetFont(size: 14),
+        };
+
+        /// <summary>
+        /// Builds one control for a setting, or null when anything on the path is missing.
+        /// Enum dropdowns are constructed via reflection; no official ruleset type is named.
+        /// </summary>
+        private static Drawable? buildRulesetSettingControl(object manager, RulesetSettingDescriptor setting)
+        {
+            object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+
+            if (bindable == null)
+                return null;
+
+            switch (setting.Kind)
+            {
+                case RulesetSettingKind.Bool:
+                    return new LabelledSwitchButton
+                    {
+                        Label = setting.Label,
+                        Current = (Bindable<bool>)bindable,
+                    };
+
+                case RulesetSettingKind.Double:
+                    return new SettingsSlider<double>
+                    {
+                        LabelText = setting.Label,
+                        Current = (Bindable<double>)bindable,
+                        KeyboardStep = setting.SliderStep,
+                    };
+
+                case RulesetSettingKind.Enum:
+                    return buildEnumDropdown(bindable, setting);
+
+                default:
+                    return null;
+            }
+        }
+
+        private static Drawable? buildEnumDropdown(object bindable, RulesetSettingDescriptor setting)
+        {
+            Type? enumType = bindable.GetType().GetGenericArguments().FirstOrDefault();
+
+            if (enumType == null || !enumType.IsEnum)
+                return null;
+
+            Type dropdownType;
+            object dropdown;
+
+            try
+            {
+                dropdownType = typeof(LabelledDropdown<>).MakeGenericType(enumType);
+                dropdown = Activator.CreateInstance(dropdownType, new object[] { true })!;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+
+            dropdownType.GetProperty("Label")?.SetValue(dropdown, new LocalisableString(setting.Label));
+            dropdownType.GetProperty("Items")?.SetValue(dropdown, Enum.GetValues(enumType));
+            dropdownType.GetProperty("Current")?.SetValue(dropdown, bindable);
+
+            return (Drawable)dropdown;
         }
 
         /// <summary>

@@ -6,15 +6,12 @@ using System.Collections.Generic;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Logging;
 using osu.Game.Configuration;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Configuration;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
-using osu.Game.Rulesets.Mania.Configuration;
-using osu.Game.Rulesets.Mania.UI;
-using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
-using osu.Game.Rulesets.Taiko.Configuration;
-using osu.Game.Rulesets.UI;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
 {
@@ -35,26 +32,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private readonly List<System.Action> restoreActions = new List<System.Action>();
 
-        private OsuRulesetConfigManager? osuRulesetConfig;
-        private TaikoRulesetConfigManager? taikoRulesetConfig;
-        private ManiaRulesetConfigManager? maniaRulesetConfig;
+        // Official ruleset types must only ever be touched from method bodies
+        // (resolved lazily on first use), never from fields, signatures or attributes,
+        // or this whole assembly fails to load. See RulesetAssemblyIsolationTest.
 
         /// <summary>
-        /// The live osu! ruleset config, or null when the ruleset is unavailable.
+        /// The live ruleset config for a short name (osu, taiko, mania), or null when unavailable.
         /// </summary>
-        public OsuRulesetConfigManager? OsuRulesetConfig => osuRulesetConfig ??= getRulesetConfig<OsuRulesetConfigManager>("osu");
-
-        /// <summary>
-        /// The live taiko ruleset config, or null when the ruleset is unavailable.
-        /// </summary>
-        public TaikoRulesetConfigManager? TaikoRulesetConfig => taikoRulesetConfig ??= getRulesetConfig<TaikoRulesetConfigManager>("taiko");
-
-        /// <summary>
-        /// The live mania ruleset config, or null when the ruleset is unavailable.
-        /// </summary>
-        public ManiaRulesetConfigManager? ManiaRulesetConfig => maniaRulesetConfig ??= getRulesetConfig<ManiaRulesetConfigManager>("mania");
-
-        private T? getRulesetConfig<T>(string shortName) where T : class
+        public IRulesetConfigManager? GetRulesetConfig(string shortName)
         {
             try
             {
@@ -62,7 +47,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 if (info == null)
                     return null;
 
-                return configCache.GetConfigFor(info.CreateInstance()) as T;
+                return configCache.GetConfigFor(info.CreateInstance());
             }
             catch (InvalidOperationException)
             {
@@ -200,67 +185,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             var effective = bracket ?? new RulesetSettings();
 
-            void backup<T>(Bindable<T> bindable)
+            foreach (var section in RulesetSettingDescriptors.Sections)
             {
-                T value = bindable.Value;
-                restoreActions.Add(() => bindable.Value = value);
-            }
+                object? manager = GetRulesetConfig(section.Key);
 
-            if (OsuRulesetConfig is { } osu)
-            {
-                var snakingIn = osu.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders);
-                var snakingOut = osu.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders);
-                var hitAnimations = osu.GetBindable<bool>(OsuRulesetSetting.HitAnimations);
-                var cursorTrail = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail);
-                var cursorRipples = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples);
-                var borderStyle = osu.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle);
+                if (manager == null)
+                    continue;
 
-                backup(snakingIn);
-                backup(snakingOut);
-                backup(hitAnimations);
-                backup(cursorTrail);
-                backup(cursorRipples);
-                backup(borderStyle);
+                foreach (var setting in section.Value)
+                {
+                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
 
-                snakingIn.Value = effective.Osu.SnakingInSliders;
-                snakingOut.Value = effective.Osu.SnakingOutSliders;
-                hitAnimations.Value = effective.Osu.HitAnimations;
-                cursorTrail.Value = effective.Osu.ShowCursorTrail;
-                cursorRipples.Value = effective.Osu.ShowCursorRipples;
-                borderStyle.Value = effective.Osu.PlayfieldBorderStyle;
-            }
+                    if (bindable == null)
+                        continue;
 
-            if (TaikoRulesetConfig is { } taiko)
-            {
-                var touchScheme = taiko.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme);
-                var hitAnimations = taiko.GetBindable<bool>(TaikoRulesetSetting.HitAnimations);
-                var rateAdjusted = taiko.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation);
-
-                backup(touchScheme);
-                backup(hitAnimations);
-                backup(rateAdjusted);
-
-                touchScheme.Value = effective.Taiko.TouchControlScheme;
-                hitAnimations.Value = effective.Taiko.HitAnimations;
-                rateAdjusted.Value = effective.Taiko.RateAdjustedHitAnimation;
-            }
-
-            if (ManiaRulesetConfig is { } mania)
-            {
-                var scrollSpeed = mania.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed);
-                var scrollDirection = mania.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection);
-                var noteColouring = mania.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring);
-                var touchOverlay = mania.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay);
-
-                backup(scrollSpeed);
-                backup(scrollDirection);
-                backup(noteColouring);
-                backup(touchOverlay);
-
-                scrollSpeed.Value = effective.Mania.ScrollSpeed;
-                scrollDirection.Value = effective.Mania.ScrollDirection;
-                noteColouring.Value = effective.Mania.TimingBasedNoteColouring;
-                touchOverlay.Value = effective.Mania.TouchOverlay;
+                    backupBindable(bindable);
+                    RulesetSettingDescriptors.SetBindableValue(bindable,
+                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(effective)));
+                }
             }
         }
 
@@ -269,30 +211,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         public void SnapshotRulesetToBracket(RulesetSettings target)
         {
-            if (OsuRulesetConfig is { } osu)
+            foreach (var section in RulesetSettingDescriptors.Sections)
             {
-                target.Osu.SnakingInSliders = osu.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders).Value;
-                target.Osu.SnakingOutSliders = osu.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders).Value;
-                target.Osu.HitAnimations = osu.GetBindable<bool>(OsuRulesetSetting.HitAnimations).Value;
-                target.Osu.ShowCursorTrail = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail).Value;
-                target.Osu.ShowCursorRipples = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples).Value;
-                target.Osu.PlayfieldBorderStyle = osu.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle).Value;
-            }
+                object? manager = GetRulesetConfig(section.Key);
 
-            if (TaikoRulesetConfig is { } taiko)
-            {
-                target.Taiko.TouchControlScheme = taiko.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme).Value;
-                target.Taiko.HitAnimations = taiko.GetBindable<bool>(TaikoRulesetSetting.HitAnimations).Value;
-                target.Taiko.RateAdjustedHitAnimation = taiko.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation).Value;
-            }
+                if (manager == null)
+                    continue;
 
-            if (ManiaRulesetConfig is { } mania)
-            {
-                target.Mania.ScrollSpeed = mania.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed).Value;
-                target.Mania.ScrollDirection = mania.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection).Value;
-                target.Mania.TimingBasedNoteColouring = mania.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring).Value;
-                target.Mania.TouchOverlay = mania.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay).Value;
+                foreach (var setting in section.Value)
+                {
+                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+
+                    if (bindable == null)
+                        continue;
+
+                    object? modelValue = RulesetSettingDescriptors.ToModelValue(setting,
+                        RulesetSettingDescriptors.GetBindableValue(bindable));
+
+                    if (modelValue != null)
+                        setting.SetModelValue(target, modelValue);
+                }
             }
+        }
+
+        /// <summary>
+        /// Remembers a live bindable for restoration on exit. Captures only reflection
+        /// handles and boxed values, so the closure never binds foreign assemblies.
+        /// </summary>
+        private void backupBindable(object bindable)
+        {
+            object? value = RulesetSettingDescriptors.GetBindableValue(bindable);
+            restoreActions.Add(() => RulesetSettingDescriptors.SetBindableValue(bindable, value));
         }
     }
 }

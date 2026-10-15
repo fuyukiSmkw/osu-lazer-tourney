@@ -257,6 +257,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 dependencies.Cache(ladder);
 
                 visualAudioSettings.ApplyFromBracket(ladder.VisualAudioSettings);
+
                 visualAudioSettings.ApplyRulesetFromBracket(ladder.RulesetSettings);
 
                 bracketLoadTaskCompletionSource.SetResult(true);
@@ -446,6 +447,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // Snapshot live settings first, so saves persist them and the
             // unsaved-changes detection picks up slider/switch edits.
             visualAudioSettings.SnapshotToBracket(ladder.VisualAudioSettings ??= new VisualAudioSettings());
+
             visualAudioSettings.SnapshotRulesetToBracket(ladder.RulesetSettings ??= new RulesetSettings());
 
             foreach (var r in ladder.Rounds)

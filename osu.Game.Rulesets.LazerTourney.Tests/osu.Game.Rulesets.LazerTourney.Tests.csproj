@@ -15,6 +15,10 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\osu.Game.Rulesets.LazerTourney\osu.Game.Rulesets.LazerTourney.csproj" />
+    <!-- Test-only: the main plugin must never reference these (see AGENTS.md). Test dlls are excluded from ruleset scanning. -->
+    <ProjectReference Include="..\..\osu\osu.Game.Rulesets.Osu\osu.Game.Rulesets.Osu.csproj" />
+    <ProjectReference Include="..\..\osu\osu.Game.Rulesets.Taiko\osu.Game.Rulesets.Taiko.csproj" />
+    <ProjectReference Include="..\..\osu\osu.Game.Rulesets.Mania\osu.Game.Rulesets.Mania.csproj" />
   </ItemGroup>
   <PropertyGroup Label="Project">
     <OutputType>WinExe</OutputType>
