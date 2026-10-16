@@ -172,6 +172,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         /// </summary>
         public MultiplayerPlaylistItem? SpectatedItem { get; private set; }
 
+        /// <summary>
+        /// Read-only access to clocks for external consumers (e.g., WebSocket server).
+        /// </summary>
+        public IReadOnlyDictionary<int, SpectatorPlayerClock> ClocksByUser => clocksByUser;
+
+        /// <summary>
+        /// Read-only access to the leaderboard provider for external consumers.
+        /// </summary>
+        public WeightedTournamentLeaderboardProvider? LeaderboardProvider => leaderboardProvider;
+
+        /// <summary>
+        /// Read-only access to scores for external consumers.
+        /// </summary>
+        public IReadOnlyDictionary<int, Score> ScoresByUser => scoresByUser;
+
+        /// <summary>
+        /// Read-only access to red team cells.
+        /// </summary>
+        public IReadOnlyList<SpectateCell>? RedCells => redCells;
+
+        /// <summary>
+        /// Read-only access to blue team cells.
+        /// </summary>
+        public IReadOnlyList<SpectateCell>? BlueCells => blueCells;
+
         private void updateSpectatedScore()
             => SpectatedScore.Value = scoresByUser.Values.FirstOrDefault();
 
@@ -257,6 +282,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         /// <summary>
         /// Recomputes slot assignment, labels, watches and score provider.
+        /// Cells still showing gameplay (results or last frames) stay pinned to their owner.
         /// No-op while frozen unless <paramref name="force"/> is set (new match, mid-match join, reset).
         /// </summary>
         public void Assign(bool force = false)
@@ -298,8 +324,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     clockItemId = itemId;
             }
 
-            var redIds = assignSide(room, redCells, 0);
-            var blueIds = assignSide(room, blueCells, 1);
+            // Cells still showing gameplay (results or last frames) keep their owner and label;
+            // fresh picks exclude those owners so nobody is shown twice.
+            var reservedIds = redCells.Concat(blueCells)
+                                      .Where(c => c.HasPlay && c.AssignedUserId != null)
+                                      .Select(c => c.AssignedUserId!.Value)
+                                      .ToHashSet();
+
+            var redIds = assignSide(room, redCells, 0, reservedIds);
+            var blueIds = assignSide(room, blueCells, 1, reservedIds);
 
             cellsByUser.Clear();
 
@@ -315,7 +348,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     cellsByUser[blueIds[i]!.Value] = blueCells[i];
             }
 
-            var assignedIds = redIds.Concat(blueIds).Where(id => id != null).Select(id => id!.Value).ToList();
+            // Retained owners who left the room keep their label but stop being watched.
+            var roomUserIds = room.Users.Select(u => u.UserID).ToHashSet();
+            var assignedIds = redIds.Concat(blueIds).Where(id => id != null).Select(id => id!.Value).Where(roomUserIds.Contains).ToList();
 
             syncWatches(assignedIds);
             recreateScoreProvider(room, assignedIds);
@@ -338,8 +373,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         /// <summary>
         /// Assigns users to one side's cells. Returns the assigned user ID per cell (null for idle slots).
+        /// Cells still showing gameplay (results or last frames) are pinned to their owner:
+        /// their label is never rewritten here, and <paramref name="reservedIds"/> (those owners)
+        /// are excluded from fresh picks so nobody is shown twice.
         /// </summary>
-        private List<int?> assignSide(MultiplayerRoom room, IReadOnlyList<SpectateCell> cells, int sideIndex)
+        private List<int?> assignSide(MultiplayerRoom room, IReadOnlyList<SpectateCell> cells, int sideIndex, HashSet<int> reservedIds)
         {
             var result = new List<int?>();
             var red = TournamentColours.GetTeamNameColour(TeamColour.Red);
@@ -351,14 +389,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 // non-playing occupants keep idle backgrounds.
                 int n = cells.Count;
 
+                var queue = new Queue<MultiplayerRoomUser>();
+
                 for (int i = 0; i < n; i++)
                 {
                     int slotIndex = sideIndex * n + i;
                     int? userId = slotIndex < matchState.Slots.Length ? matchState.Slots[slotIndex] : null;
                     var user = userId == null ? null : room.Users.SingleOrDefault(u => u.UserID == userId);
 
-                    result.Add(user?.UserID);
-                    cells[i].Assign(user?.User?.Username, sideIndex == 0 ? red : blue);
+                    if (user != null && !reservedIds.Contains(user.UserID))
+                        queue.Enqueue(user);
+                }
+
+                for (int i = 0; i < n; i++)
+                {
+                    if (cells[i].HasPlay)
+                    {
+                        result.Add(cells[i].AssignedUserId);
+                        continue;
+                    }
+
+                    if (queue.Count > 0)
+                    {
+                        var user = queue.Dequeue();
+                        result.Add(user.UserID);
+                        cells[i].Assign(user.User?.Username, sideIndex == 0 ? red : blue, user.UserID);
+                    }
+                    else
+                    {
+                        result.Add(null);
+                        cells[i].Assign(null, Color4.White);
+                    }
                 }
 
                 return result;
@@ -369,7 +430,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // Only playable users (not referee/spectating/missing the map) take cells.
             // Anything else leaves its slots on the idle background. Re-evaluated on every
             // Assign, so pre-match downloads or state changes pick users up before the match starts.
-            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable);
+            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable).Where(u => !reservedIds.Contains(u.UserID));
 
             if (teamMode)
             {
@@ -382,19 +443,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 candidates = candidates.Skip(redCells!.Count);
             }
 
-            var picked = candidates.Take(cells.Count).ToList();
+            var picked = new Queue<MultiplayerRoomUser>(candidates.Take(cells.Count));
 
             for (int i = 0; i < cells.Count; i++)
             {
-                if (i < picked.Count)
+                if (cells[i].HasPlay)
                 {
-                    var user = picked[i];
+                    result.Add(cells[i].AssignedUserId);
+                    continue;
+                }
+
+                if (picked.Count > 0)
+                {
+                    var user = picked.Dequeue();
                     Color4 colour = teamMode
                         ? (sideIndex == 0 ? red : blue)
                         : Color4.White;
 
                     result.Add(user.UserID);
-                    cells[i].Assign(user.User?.Username, colour);
+                    cells[i].Assign(user.User?.Username, colour, user.UserID);
                 }
                 else
                 {

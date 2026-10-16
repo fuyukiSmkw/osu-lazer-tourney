@@ -83,6 +83,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         public TournamentPlayerArea? PlayArea { get; private set; }
 
+        /// <summary>
+        /// User ID this cell is assigned to. Retained while gameplay visuals are attached
+        /// so result/last frames keep their owner's label across reassignments.
+        /// Cleared together with the play visuals.
+        /// </summary>
+        public int? AssignedUserId { get; private set; }
+
         public SpectateCell(SeasonalBackgroundLoader backgrounds)
         {
             this.backgrounds = backgrounds;
@@ -271,7 +278,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// <summary>
         /// Assigns a player to this cell. Null/empty username hides the label (idle slot).
         /// </summary>
-        public void Assign(string? username, Color4 colour)
+        public void Assign(string? username, Color4 colour, int? userId = null)
         {
             usernameText.FinishTransforms();
             usernameText.Scale = Vector2.One;
@@ -279,6 +286,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             usernameText.Text = username ?? string.Empty;
             usernameText.Colour = usernameColour = colour;
             usernameText.Alpha = string.IsNullOrEmpty(username) ? 0 : 1;
+            AssignedUserId = userId;
         }
 
         /// <summary>
@@ -309,9 +317,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         /// <summary>
         /// Removes gameplay, returning to the idle background.
+        /// Also releases the owner pin, so the next assignment may relabel freely.
         /// </summary>
         public void ClearPlay()
         {
+            AssignedUserId = null;
+
             if (PlayArea == null)
                 return;
 
