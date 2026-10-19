@@ -111,13 +111,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Protect",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Protect),
-                                        BackgroundColour = colours.Red3,
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
                                     },
                                     buttonBlueProtect = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Protect",
-                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Protect)
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Protect),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
                                     },
                                 },
                                 // line 2: ban
@@ -128,13 +129,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Ban",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Ban),
-                                        BackgroundColour = colours.Red3,
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
                                     },
                                     buttonBlueBan = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Ban",
-                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Ban)
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Ban),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
                                     },
                                 },
                                 // line 3: pick
@@ -145,13 +147,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Pick",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Pick),
-                                        BackgroundColour = colours.Red3,
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
                                     },
                                     buttonBluePick = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Pick",
-                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Pick)
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Pick),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
                                     },
                                 },
                             }

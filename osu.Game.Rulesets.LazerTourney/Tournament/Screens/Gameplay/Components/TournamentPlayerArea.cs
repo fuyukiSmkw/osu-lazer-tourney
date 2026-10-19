@@ -25,7 +25,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
     /// </summary>
     /// <remarks>
     /// Forked so gameplay is driven by <see cref="TournamentSpectatorPlayer"/> (without the official
-    /// username label) instead of <see cref="MultiSpectatorPlayer"/>. Everything else mirrors official.
+    /// username label) instead of <see cref="MultiSpectatorPlayer"/>, and pushed through
+    /// <see cref="TournamentSpectatorPlayerLoader"/> so the loader cannot touch the shared track
+    /// (<see cref="PlayerLoader"/> muffles and stops it; other cells keep playing the master clock).
+    /// Everything else mirrors official.
     /// </remarks>
     public partial class TournamentPlayerArea : CompositeDrawable
     {
@@ -111,7 +114,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             audioContainer.AddAdjustment(AdjustableProperty.Volume, volumeAdjustment);
         }
 
-        public void LoadScore(Score score)
+        public void LoadScore(Score score, bool suppressAudioEffects = false)
         {
             if (Score != null)
                 throw new InvalidOperationException($"Cannot load a new score on a {nameof(TournamentPlayerArea)} that has an existing score.");
@@ -138,7 +141,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 }
             };
 
-            stack.Push(new MultiSpectatorPlayerLoader(Score, () =>
+            // Single-player reset (suppressAudioEffects=true) uses our fork that neutralises
+            // PlayerLoader's track mute/stop + entrance filters. Normal start / full reset use
+            // the official loader to preserve the entrance blur/fade behaviour.
+            SpectatorPlayerLoader loader = suppressAudioEffects
+                ? new TournamentSpectatorPlayerLoader(Score, () => createPlayer())
+                : new MultiSpectatorPlayerLoader(Score, () => createPlayer());
+
+            stack.Push(loader);
+
+            loadingLayer.Hide();
+
+            TournamentSpectatorPlayer createPlayer()
             {
                 var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock)
                 {
@@ -155,9 +169,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
 
                 return player;
-            }));
-
-            loadingLayer.Hide();
+            }
         }
 
         public bool Mute

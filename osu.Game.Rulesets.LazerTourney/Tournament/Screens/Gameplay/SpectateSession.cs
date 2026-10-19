@@ -106,6 +106,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, Mod[]> modsByUser = new Dictionary<int, Mod[]>();
         private readonly HashSet<int> seenBreak = new HashSet<int>();
         private readonly HashSet<int> comboSubscribed = new HashSet<int>();
+
+        /// <summary>
+        /// User IDs for which the next <see cref="startGameplay"/> should suppress
+        /// <see cref="PlayerLoader"/>'s audio side effects (track mute/stop + entrance filters).
+        /// Populated by <see cref="ResetPlayer"/>; consumed once per user in <see cref="startGameplay"/>.
+        /// Normal match start, full reset, and late joins do NOT set this, so they keep the
+        /// official entrance blur/fade behaviour. Only the explicit per-player reset uses it.
+        /// </summary>
+        private readonly HashSet<int> suppressAudioForUsers = new HashSet<int>();
         private Bindable<bool> preferNoVideo = null!;
         private readonly List<(BindableInt bindable, Action<ValueChangedEvent<int>> handler)> comboSubscriptions = new List<(BindableInt, Action<ValueChangedEvent<int>>)>();
 
@@ -507,6 +516,44 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             Assign(force: true);
         }
 
+        /// <summary>
+        /// Resets a single player's spectate state. Only works while the user is actively Playing.
+        /// Other players are completely unaffected — master clock, audio, leaderboard keep running.
+        /// If the player has already disconnected (Passed/Failed/Quit/not in room), this is a no-op
+        /// and their last frame is retained.
+        /// </summary>
+        public void ResetPlayer(int userId)
+        {
+            // Must be currently watched
+            if (!watchedUsers.Contains(userId))
+                return;
+
+            // Must be in Playing state; if already disconnected, keep last frame and do nothing
+            if (!spectatorClient.WatchedUserStates.TryGetValue(userId, out var state)
+                || state.State != SpectatedUserState.Playing)
+                return;
+
+            // Must have an assigned cell with active gameplay
+            if (!cellsByUser.TryGetValue(userId, out var cell) || !cell.HasPlay)
+                return;
+
+            // Tear down THIS player only
+            stopWatching(userId);
+            removeClock(userId);
+            cell.ClearPlay();
+            scoresByUser.Remove(userId);
+            // NOTE: keep modsByUser[userId] — mods are locked at match start, reuse for weight
+
+            // Mark this user so the upcoming startGameplay suppresses PlayerLoader's
+            // entrance blur/fade/stop side effects (master track is already live).
+            suppressAudioForUsers.Add(userId);
+
+            // Re-start watching → onUserStateChanged → startGameplay (scheduled)
+            // startGameplay will create fresh Score+Replay, new clock seeking to live master time,
+            // attach new TournamentPlayerArea to the SAME cell, and re-add clock to leaderboardProvider.
+            startWatching(userId);
+        }
+
         #endregion
 
         #region Room events
@@ -901,9 +948,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 clocksByUser[userId] = clock;
                 cell.AttachPlayArea(area);
 
-                // Pushes the inner MultiSpectatorPlayerLoader -> MultiSpectatorPlayer.
-                // Without this the area stays on its loading spinner forever.
-                area.LoadScore(playScore);
+                // Re-assign the cell's label so the username stays visible across resets.
+                // The userMap is populated from room users in startGameplay's guard chain.
+                if (userMap.TryGetValue(userId, out var apiUser))
+                {
+                    var roomUser = multiplayerClient.Room?.Users.FirstOrDefault(u => u.UserID == userId);
+                    Color4 teamColour;
+                    if (roomUser?.MatchState is osu.Game.Online.Multiplayer.MatchTypes.TeamVersus.TeamVersusUserState tvs)
+                        teamColour = tvs.TeamID == 0 ? TournamentColours.GetTeamNameColour(TeamColour.Red) : TournamentColours.GetTeamNameColour(TeamColour.Blue);
+                    else
+                        teamColour = Color4.White;
+                    cell.Assign(apiUser.Username, teamColour, userId);
+                }
+
+                // Single-player reset (via ResetPlayer) sets this flag so the loader
+                // skips muting/stopping the shared master track. Normal start / full reset
+                // do not set it, preserving the official entrance blur/fade behaviour.
+                bool suppressAudioEffects = suppressAudioForUsers.Remove(userId);
+
+                // Pushes the inner loader -> player.
+                area.LoadScore(playScore, suppressAudioEffects);
 
                 if (leaderboardLoaded && leaderboardProvider != null)
                 {
