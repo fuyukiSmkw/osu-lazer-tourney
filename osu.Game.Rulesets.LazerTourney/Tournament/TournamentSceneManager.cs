@@ -98,6 +98,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         [Cached]
         private readonly MatchStartCountdownSounds countdownSounds = new MatchStartCountdownSounds();
 
+        /// <summary>
+        /// WebSocket server exposing tournament data for tosu-compatible overlays.
+        /// Runs on port 50727 to avoid conflict with tosu's default port 24050.
+        /// </summary>
+        [Cached]
+        private readonly TourneyDataWebSocketServer tourneyDataServer = new TourneyDataWebSocketServer();
+
         private Container chatContainer = null!;
         private FillFlowContainer buttons = null!;
 
@@ -220,6 +227,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 chatTimerService,
                 countdownTimer,
                 countdownSounds,
+                tourneyDataServer,
             };
 
             foreach (var drawable in screens)

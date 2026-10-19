@@ -178,6 +178,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         public IReadOnlyDictionary<int, SpectatorPlayerClock> ClocksByUser => clocksByUser;
 
         /// <summary>
+        /// Current spectate master clock time in milliseconds, when a master exists.
+        /// Used by the WebSocket server for tosu-compatible playback position.
+        /// </summary>
+        public double? MasterClockTime => masterClock?.CurrentTime;
+
+        /// <summary>
         /// Read-only access to the leaderboard provider for external consumers.
         /// </summary>
         public WeightedTournamentLeaderboardProvider? LeaderboardProvider => leaderboardProvider;
@@ -884,12 +890,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (syncManager.CurrentMasterTime > 0)
                     clock.Seek(syncManager.CurrentMasterTime);
 
-                var area = new TournamentPlayerArea(userId, clock);
-
-                // Per-player custom multiplier for the cell HUD and results, evaluated once:
-                // mods are locked once the match starts so one weight lasts the whole play.
-                // Inactive rules evaluate to 1, which disables the adjustment entirely.
-                area.ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods);
+                var area = new TournamentPlayerArea(userId, clock)
+                {
+                    // Per-player custom multiplier for the cell HUD and results, evaluated once:
+                    // mods are locked once the match starts so one weight lasts the whole play.
+                    // Inactive rules evaluate to 1, which disables the adjustment entirely.
+                    ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods)
+                };
 
                 clocksByUser[userId] = clock;
                 cell.AttachPlayArea(area);
@@ -1027,11 +1034,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 masterClock = null;
             }
 
-            if (syncManager != null)
-            {
-                syncManager.Expire();
-                syncManager = null;
-            }
+            syncManager?.Expire();
+            syncManager = null;
 
             clockGeneration++;
 

@@ -6,8 +6,10 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
+using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
+using osu.Game.Screens.Play;
 using osu.Game.Screens.Ranking;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
@@ -26,6 +28,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// Set before load; mods are locked once a match starts so one weight lasts the whole play.
         /// </summary>
         public double ScoreWeight { get; set; } = 1;
+
+        /// <summary>
+        /// Public access to the score processor for external consumers.
+        /// </summary>
+        public ScoreProcessor ScoreProcessorPublic => ScoreProcessor;
+
+        /// <summary>
+        /// Public access to the health processor for external consumers.
+        /// </summary>
+        public HealthProcessor HealthProcessorPublic => HealthProcessor;
+
+        /// <summary>
+        /// Public access to the gameplay state (the parsed playable beatmap, live mods and
+        /// ruleset) once gameplay has started. Lets the tournament data server reuse the
+        /// in-memory beatmap for difficulty/performance calculations instead of re-parsing.
+        /// </summary>
+        public GameplayState GameplayStatePublic => GameplayState;
 
         public TournamentSpectatorPlayer(Score score, SpectatorPlayerClock clock)
             : base(score, clock)

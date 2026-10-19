@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using osu.Framework.Bindables;
-using osu.Framework.Graphics;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Screens.Play.Leaderboards;
@@ -20,11 +19,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
     /// their own mods, freestyle or not). <see cref="WeightFunction"/> defaults to x1, in which
     /// case the adjusted totals equal the raw <c>TeamScores</c>.
     /// </para>
-        /// <para>
-        /// The weight callback receives the live processor-side mod snapshot only as a
-        /// fallback: that snapshot is built once and never refreshed upstream, so callers should
-        /// prefer their own mod source (e.g. the Playing-time state) keyed by user id.
-        /// </para>
+    /// <para>
+    /// The weight callback receives the live processor-side mod snapshot only as a
+    /// fallback: that snapshot is built once and never refreshed upstream, so callers should
+    /// prefer their own mod source (e.g. the Playing-time state) keyed by user id.
+    /// </para>
     /// </summary>
     public partial class WeightedTournamentLeaderboardProvider : MultiSpectatorLeaderboardProvider
     {

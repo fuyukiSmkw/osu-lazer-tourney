@@ -14,6 +14,7 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Localisation;
+using osu.Framework.Platform;
 using osu.Framework.Threading;
 using osu.Game.Configuration;
 using osu.Game.Graphics;
@@ -76,6 +77,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         [Resolved]
         private VisualAudioSettingsController visualAudioSettings { get; set; } = null!;
+
+        [Resolved]
+        private Clipboard? clipboard { get; set; }
 
         [Resolved]
         private FrameworkConfigManager frameworkConfig { get; set; } = null!;
@@ -143,6 +147,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
             var left = new List<Drawable>(coreSettingsSection(inRoom));
             left.AddRange(refereeApiSection());
+            left.AddRange(webSocketSection());
 
             var right = new List<Drawable>(visualAudioSettingsSection());
             right.AddRange(rulesetSettingsSection());
@@ -707,6 +712,46 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private ActionableInfo tokenRow = null!;
         private ActionableInfo connectionRow = null!;
+
+        /// <summary>
+        /// Builds the tosu-compatible WebSocket data feed section: explains how to point an
+        /// existing tosu ws v1 overlay at the plugin's stream and offers a Copy URL button,
+        /// mirroring the referee callback URL row above.
+        /// </summary>
+        private IEnumerable<Drawable> webSocketSection()
+        {
+            string wsUrl = $"ws://127.0.0.1:{TourneyDataWebSocketServer.PORT}{TourneyDataWebSocketServer.PATH}";
+            string backgroundUrl = $"http://127.0.0.1:{TourneyDataWebSocketServer.PORT}{TourneyDataWebSocketServer.BACKGROUND_PATH}";
+
+            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 18))
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+            };
+
+            guide.AddText($"While the tournament plugin is open, it hosts a tosu-compatible WebSocket v1 data stream at {wsUrl}.\n\n");
+            guide.AddText($"To reuse an existing tosu overlay, point its WebSocket URL from tosu's default (ws://127.0.0.1:24050/ws) to {wsUrl}: the field layout (tourney.manager, tourney.ipcClients, menu.bm, …) follows tosu's v1 schema, so usually only the URL changes.\n\n");
+            guide.AddText($"The current beatmap's background image is additionally served at {backgroundUrl}.\n\n");
+            guide.AddText("Note: the stream covers the fields stream overlays commonly use; some tosu-specific fields are still placeholders.\n\n");
+            guide.AddText("A minimal sample overlay: ");
+            guide.AddArbitraryDrawable(new ExternalLinkButton(TourneyDataWebSocketServer.SAMPLE_OVERLAY_URL));
+
+            yield return new OsuSpriteText
+            {
+                Text = "WebSocket data feed (tosu-compatible)",
+                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            yield return guide;
+
+            yield return new ActionableInfo
+            {
+                Label = "WebSocket URL",
+                ButtonText = "Copy URL",
+                Action = () => clipboard?.SetText(wsUrl),
+                Value = wsUrl,
+            };
+        }
 
         private void updateTokenRow()
         {

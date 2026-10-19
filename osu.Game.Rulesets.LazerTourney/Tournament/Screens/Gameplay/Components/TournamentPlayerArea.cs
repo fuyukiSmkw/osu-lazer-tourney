@@ -11,6 +11,7 @@ using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
@@ -36,7 +37,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// <summary>
         /// Whether a <see cref="Player"/> is loaded in the area.
         /// </summary>
-        public bool PlayerLoaded => (stack?.CurrentScreen as Player)?.IsLoaded == true;
+        public bool PlayerLoaded => stack?.CurrentScreen is Player { IsLoaded: true };
 
         /// <summary>
         /// The user id this <see cref="TournamentPlayerArea"/> corresponds to.
@@ -57,6 +58,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// The currently-loaded score.
         /// </summary>
         public Score? Score { get; private set; }
+
+        /// <summary>
+        /// The score processor of the loaded player, if available.
+        /// </summary>
+        public ScoreProcessor? ScoreProcessor { get; private set; }
+
+        /// <summary>
+        /// The health processor of the loaded player, if available.
+        /// </summary>
+        public HealthProcessor? HealthProcessorPublic { get; private set; }
+
+        /// <summary>
+        /// The gameplay state of the loaded player (parsed playable beatmap + mods), if available.
+        /// Captured alongside <see cref="ScoreProcessor"/> when gameplay starts.
+        /// </summary>
+        public GameplayState? GameplayStatePublic { get; private set; }
 
         /// <summary>
         /// Per-score custom multiplier for the loaded score, applied to the cell HUD and results.
@@ -127,7 +144,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 {
                     ScoreWeight = ScoreWeight,
                 };
-                player.OnGameplayStarted += () => OnGameplayStarted?.Invoke();
+                player.OnGameplayStarted += () =>
+                {
+                    ScoreProcessor = player.ScoreProcessorPublic;
+                    HealthProcessorPublic = player.HealthProcessorPublic;
+                    GameplayStatePublic = player.GameplayStatePublic;
+                    OnGameplayStarted?.Invoke();
+                };
 
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
 
