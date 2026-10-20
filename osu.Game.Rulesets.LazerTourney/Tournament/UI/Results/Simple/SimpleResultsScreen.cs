@@ -9,15 +9,14 @@ using osu.Framework.Input.Events;
 using osu.Framework.Testing;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Input.Bindings;
-using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Scoring;
 using osu.Game.Screens.Ranking;
 using osuTK;
 
-namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
+namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple
 {
     /// <summary>
-    /// Tournament results screen, shared by the showcase replay results
+    /// Simple tournament results screen, shared by the showcase replay results
     /// and the gameplay spectate results. Shows only the current score:
     /// no leaderboard, no bottom bar.
     /// </summary>
@@ -27,9 +26,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
     /// The inherited leaderboard list, statistics overlay and bottom bar are expired on load
     /// and replaced with a static custom layout (basic info left, details right, no popups).
     /// </remarks>
-    public partial class TournamentResultsScreen : ResultsScreen
+    public partial class SimpleResultsScreen : ResultsScreen
     {
-        public TournamentResultsScreen(ScoreInfo score)
+        public SimpleResultsScreen(ScoreInfo score)
             : base(score)
         {
         }
@@ -48,7 +47,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
                 .FirstOrDefault(c => c.Anchor == Anchor.BottomLeft && c.Height == TwoLayerButton.SIZE_EXTENDED.Y);
             bottomBar?.Expire();
 
-            AddInternal(new ResultsContent(Score));
+            AddInternal(new SimpleResultsContent(Score));
         }
 
         public override bool OnBackButton() => true;
@@ -57,9 +56,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
         /// Static custom layout: basic info on the left, details directly on the right.
         /// Also swallows Select/QuickExit keys so the expired base UI can never be toggled back.
         /// </summary>
-        private partial class ResultsContent : Container, IKeyBindingHandler<GlobalAction>
+        private partial class SimpleResultsContent : Container, IKeyBindingHandler<GlobalAction>
         {
-            public ResultsContent(ScoreInfo? score)
+            public SimpleResultsContent(ScoreInfo? score)
             {
                 RelativeSizeAxes = Axes.Both;
 
@@ -79,7 +78,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
                         RelativeSizeAxes = Axes.Both,
                         Child = score == null
                             ? Empty()
-                            : new TournamentScorePanel(score)
+                            : new SimpleScorePanel(score)
                             {
                                 RelativeSizeAxes = Axes.Both,
                             },

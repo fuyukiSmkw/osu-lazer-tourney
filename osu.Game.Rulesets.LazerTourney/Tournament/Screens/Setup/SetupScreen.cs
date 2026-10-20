@@ -301,6 +301,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// <summary>
         /// Builds the Visual &amp; Audio settings section. Controls bind the lazer settings directly,
         /// so edits apply live; values are persisted to the bracket file on save.
+        /// The result screen style is a tournament-owned setting, so it is not backed up/restored.
         /// </summary>
         private IEnumerable<Drawable> visualAudioSettingsSection()
         {
@@ -308,6 +309,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             {
                 Text = "Visual & Audio settings",
                 Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
+            };
+
+            yield return sectionHeader("Result screen");
+
+            yield return new LabelledDropdown<ResultScreenStyle>(padded: true)
+            {
+                Label = "Result screen",
+                Description = "Which result screen is shown after a play or replay finishes. Applies to spectated match cells and showcase replays.",
+                Items = Enum.GetValues<ResultScreenStyle>(),
+                Current = LadderInfo.ResultScreen,
+                DropdownWidth = 0.5f,
             };
 
             yield return sectionHeader("General");

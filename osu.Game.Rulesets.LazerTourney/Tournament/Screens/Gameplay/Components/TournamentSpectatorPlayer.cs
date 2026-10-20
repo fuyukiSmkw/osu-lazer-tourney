@@ -2,10 +2,13 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System.Linq;
+using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
@@ -51,6 +54,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         {
         }
 
+        [Resolved]
+        private LadderInfo ladderInfo { get; set; } = null!;
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
@@ -85,12 +91,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             adjustingScore = false;
         }
 
-        protected override ResultsScreen CreateResults(ScoreInfo score) => new TournamentResultsScreen(score)
+        protected override ResultsScreen CreateResults(ScoreInfo score)
         {
-            // No re-watch/retry from the embedded cell results: the watch button would
-            // push onto the real screen stack and hijack the tournament UI.
-            AllowWatchingReplay = false,
-            AllowRetry = false,
-        };
+            // No re-watch/retry from the embedded cell results for any style: the watch button
+            // would push onto the real screen stack and hijack the tournament UI.
+            return ladderInfo.ResultScreen.Value switch
+            {
+                ResultScreenStyle.Simple => new SimpleResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                _ => new MultiSpectatorResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+            };
+        }
     }
 }

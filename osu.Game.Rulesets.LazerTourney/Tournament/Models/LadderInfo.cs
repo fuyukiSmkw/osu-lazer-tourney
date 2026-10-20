@@ -58,6 +58,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public Bindable<bool> DisplayTeamSeeds = new BindableBool();
 
         /// <summary>
+        /// Which result screen implementation is shown after a play or replay finishes.
+        /// Defaults to <see cref="ResultScreenStyle.Simple"/> so existing tournaments keep
+        /// their current results layout when this setting is missing from the bracket file.
+        /// </summary>
+        [DefaultValue(ResultScreenStyle.LazerDefault)]
+        public Bindable<ResultScreenStyle> ResultScreen = new Bindable<ResultScreenStyle>(ResultScreenStyle.LazerDefault);
+
+        /// <summary>
         /// Whether map pool panels show the category mod image (from RoundBeatmap.Mods).
         /// </summary>
         [DefaultValue(true)]
