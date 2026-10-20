@@ -1,6 +1,6 @@
 # AGENTS.md — osu-lazer-tourney (lazer!tourney plugin)
 
-> Architecture overview for agents. Read this before changing code. When touching multiplayer/spectating, always compare against upstream `../osu` (the osu!lazer codebase + `osu.Game.Tournament`).
+> Architecture overview for agents. Read this before changing code. When touching multiplayer/spectating, always compare against upstream `../osu` (the osu!lazer codebase + `osu.Game.Tournament`). Framework code at `../osu-framework` (only for code reading; build reference is from NuGet, not this dir).
 >
 > Comments/strings in code must be written in English (except for existing/reusable localisations).
 
