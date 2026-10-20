@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using osu.Framework.Allocation;
+using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
@@ -23,6 +24,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
     {
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
+
+        [Resolved]
+        private AudioManager audio { get; set; } = null!;
 
         [Resolved]
         private RulesetStore rulesetStore { get; set; } = null!;
@@ -73,9 +77,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             void apply<T>(OsuSetting setting, T value) => config.GetBindable<T>(setting).Value = value;
 
+            void backupAudio(BindableDouble bindable)
+            {
+                double value = bindable.Value;
+                restoreActions.Add(() => bindable.Value = value);
+            }
+
             backup<ScoringMode>(OsuSetting.ScoreDisplayMode);
             backup<bool>(OsuSetting.HitLighting);
             backup<bool>(OsuSetting.StarFountains);
+            backup<double>(OsuSetting.VolumeInactive);
+            backupAudio(audio.VolumeTrack);
+            backupAudio(audio.VolumeSample);
+            backup<double>(OsuSetting.HitsoundVolume);
             backup<float>(OsuSetting.PositionalHitsoundsLevel);
             backup<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             backup<double>(OsuSetting.DimLevel);
@@ -101,6 +115,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode);
             apply(OsuSetting.HitLighting, effective.HitLighting);
             apply(OsuSetting.StarFountains, effective.StarFountains);
+            apply(OsuSetting.VolumeInactive, effective.VolumeInactive);
+            audio.VolumeTrack.Value = effective.MusicVolume;
+            audio.VolumeSample.Value = effective.EffectVolume;
+            apply(OsuSetting.HitsoundVolume, effective.HitsoundVolume);
             apply(OsuSetting.PositionalHitsoundsLevel, effective.PositionalHitsoundsLevel);
             apply(OsuSetting.AlwaysPlayFirstComboBreak, effective.AlwaysPlayFirstComboBreak);
             apply(OsuSetting.DimLevel, effective.DimLevel);
@@ -154,6 +172,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             target.ScoreDisplayMode = get<ScoringMode>(OsuSetting.ScoreDisplayMode);
             target.HitLighting = get<bool>(OsuSetting.HitLighting);
             target.StarFountains = get<bool>(OsuSetting.StarFountains);
+            target.VolumeInactive = get<double>(OsuSetting.VolumeInactive);
+            target.MusicVolume = audio.VolumeTrack.Value;
+            target.EffectVolume = audio.VolumeSample.Value;
+            target.HitsoundVolume = get<double>(OsuSetting.HitsoundVolume);
             target.PositionalHitsoundsLevel = get<float>(OsuSetting.PositionalHitsoundsLevel);
             target.AlwaysPlayFirstComboBreak = get<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             target.DimLevel = get<double>(OsuSetting.DimLevel);

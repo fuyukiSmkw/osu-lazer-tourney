@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Linq;
 using osu.Framework;
 using osu.Framework.Allocation;
+using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Configuration;
 using osu.Framework.Graphics;
@@ -74,6 +75,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
+
+        [Resolved]
+        private AudioManager audio { get; set; } = null!;
 
         [Resolved]
         private VisualAudioSettingsController visualAudioSettings { get; set; } = null!;
@@ -328,6 +332,38 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             };
 
             yield return sectionHeader("Audio");
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Master volume (window inactive)",
+                Current = config.GetBindable<double>(OsuSetting.VolumeInactive),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Music volume",
+                Current = audio.VolumeTrack,
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Effect volume",
+                Current = audio.VolumeSample,
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
+
+            yield return new SettingsSlider<double>
+            {
+                LabelText = "Hitsound volume",
+                Current = config.GetBindable<double>(OsuSetting.HitsoundVolume),
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = true,
+            };
 
             yield return new SettingsSlider<float>
             {
