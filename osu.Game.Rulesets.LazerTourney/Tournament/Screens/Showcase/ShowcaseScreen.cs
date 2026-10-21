@@ -3,6 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+#if DEBUG
+using System.Globalization;
+#endif
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -100,10 +103,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
         private Container idleLayer = null!;
         private Container playerLayer = null!;
+#if DEBUG
+        private Container showcaseContent = null!;
+#endif
         private Container? playerContainer;
         private OsuScreenStack? playerStack;
         private FillFlowContainer transportSection = null!;
         private Container progressHost = null!;
+
+#if DEBUG
+        // Temporary showcase-only control for checking result/cell layouts at different widths.
+        private SettingsTextBox cellWidthTextBox = null!;
+        private bool cellWidthInitialised;
+#endif
 
         private int importGeneration;
         private IDisposable? beatmapArrivalSubscription;
@@ -120,6 +132,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
             preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
 
+            var content = new Container
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                RelativeSizeAxes = Axes.Both,
+                Children = new Drawable[]
+                {
+                    idleLayer = new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Child = new SpectateCell(backgrounds)
+                        {
+                            // Idle look exactly like a gameplay spectate cell with no play.
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
+                        },
+                    },
+                    playerLayer = new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                    },
+                },
+            };
+
+#if DEBUG
+            showcaseContent = content;
+#endif
+
             AddRangeInternal(new Drawable[]
             {
                 new TournamentLogo(),
@@ -132,23 +172,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 {
                     Padding = new MarginPadding { Bottom = SongBar.HEIGHT },
                     RelativeSizeAxes = Axes.Both,
-                    Children = new Drawable[]
-                    {
-                        idleLayer = new Container
-                        {
-                            RelativeSizeAxes = Axes.Both,
-                            Child = new SpectateCell(backgrounds)
-                            {
-                                // Idle look exactly like a gameplay spectate cell with no play.
-                                Anchor = Anchor.Centre,
-                                Origin = Anchor.Centre,
-                            },
-                        },
-                        playerLayer = new Container
-                        {
-                            RelativeSizeAxes = Axes.Both,
-                        },
-                    }
+                    Child = content,
                 },
                 backgroundLoader,
                 new ControlPanel
@@ -161,6 +185,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                             Text = "Reset",
                             Action = resetToIdle,
                         },
+#if DEBUG
+                        cellWidthTextBox = new CellWidthTextBox(applyCellWidth)
+                        {
+                            LabelText = "Cell width (test)",
+                        },
+#endif
                         new EditorSidebarSection("Replay")
                         {
                             Children = new Drawable[]
@@ -284,6 +314,36 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             });
         }
 
+#if DEBUG
+        protected override void Update()
+        {
+            base.Update();
+
+            if (cellWidthInitialised || !showcaseContent.IsLoaded || !cellWidthTextBox.IsLoaded)
+                return;
+
+            float width = showcaseContent.DrawWidth;
+
+            if (width <= 0)
+                return;
+
+            cellWidthInitialised = true;
+            cellWidthTextBox.Current.Value = width.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Temporary: resizes the showcase content (idle cell and replay/result area) for layout checks.
+        /// </summary>
+        private void applyCellWidth(string text)
+        {
+            if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float width) || width <= 0)
+                return;
+
+            showcaseContent.RelativeSizeAxes = Axes.Y;
+            showcaseContent.Width = width;
+        }
+#endif
+
         /// <summary>
         /// Rebuilds the song progress bar for the current player.
         /// <see cref="ArgonSongProgress"/> resolves its clock/ruleset/player from its ancestors
@@ -332,6 +392,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 return dependencies;
             }
         }
+
+#if DEBUG
+        private partial class CellWidthTextBox : SettingsTextBox
+        {
+            public CellWidthTextBox(Action<string> onCommit)
+            {
+                var textBox = (OsuTextBox)Control;
+
+                // Temporary test control: apply only on Enter, not on focus loss.
+                textBox.CommitOnFocusLost = false;
+                textBox.OnCommit += (sender, _) => onCommit(sender.Text);
+            }
+        }
+#endif
 
         private partial class SeekButton : IconButton
         {

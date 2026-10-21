@@ -9,6 +9,7 @@ using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
@@ -98,6 +99,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             return ladderInfo.ResultScreen.Value switch
             {
                 ResultScreenStyle.Simple => new SimpleResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.V2 => new V2ResultsScreen(score)
                 {
                     AllowWatchingReplay = false,
                     AllowRetry = false,

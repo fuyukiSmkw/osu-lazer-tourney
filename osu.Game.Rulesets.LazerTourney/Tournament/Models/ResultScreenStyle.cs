@@ -23,5 +23,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         [Description("Simple result (by fuyukiS)")]
         Simple,
+
+        /// <summary>
+        /// The V2 overview design originally developed in the g0v0 client fork.
+        /// </summary>
+        [Description("V2 result (by GooGuTeam)")]
+        V2,
     }
 }

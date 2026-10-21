@@ -72,8 +72,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
         private static readonly (int id, string note)[] special_thanks =
         [
             (13870362, "LLin dev"),
-            (17268434, "LLin contributor"),
-            (24557481, "LLin contributor"),
+            (30732590, "g0v0 dev (V2 results)"),
+            (30656658, "g0v0 dev (V2 results)"),
         ];
 
         [BackgroundDependencyLoader]
