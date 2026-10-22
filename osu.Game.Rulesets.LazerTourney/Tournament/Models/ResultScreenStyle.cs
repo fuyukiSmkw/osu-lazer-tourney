@@ -29,5 +29,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         [Description("V2 result (by GooGuTeam)")]
         V2,
+
+        /// <summary>
+        /// The osu!stable-style result screen originally implemented by Torii and ported to
+        /// g0v0. Display-only in the tournament plugin.
+        /// </summary>
+        [Description("Legacy stable (by Torii)")]
+        Legacy,
     }
 }

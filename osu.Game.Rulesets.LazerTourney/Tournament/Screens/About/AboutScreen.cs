@@ -74,6 +74,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
             (13870362, "LLin dev"),
             (30732590, "g0v0 dev (V2 results)"),
             (30656658, "g0v0 dev (V2 results)"),
+            (5382216, "Torii dev (Legacy results)"),
         ];
 
         [BackgroundDependencyLoader]

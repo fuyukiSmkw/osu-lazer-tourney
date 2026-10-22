@@ -8,6 +8,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Legacy;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
 using osu.Game.Rulesets.Scoring;
@@ -104,6 +105,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     AllowRetry = false,
                 },
                 ResultScreenStyle.V2 => new V2ResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.Legacy => new LegacyResultsScreen(score)
                 {
                     AllowWatchingReplay = false,
                     AllowRetry = false,
