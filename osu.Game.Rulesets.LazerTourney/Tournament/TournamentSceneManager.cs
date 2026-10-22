@@ -109,9 +109,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private FillFlowContainer buttons = null!;
 
         /// <summary>
-        /// Exit the tournament client. Called from the setup screen's exit button.
+        /// Exit the tournament client. Called from the setup screen, the tournament switcher
+        /// and host exit requests. Unsaved bracket changes are handled by <see cref="TournamentGame"/>.
         /// </summary>
-        public void ExitTournament() => tournamentGame?.ExitTournament();
+        /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
+        public void ExitTournament(Action? beforeExit = null) => tournamentGame?.ExitTournament(beforeExit);
 
         public TournamentSceneManager()
         {

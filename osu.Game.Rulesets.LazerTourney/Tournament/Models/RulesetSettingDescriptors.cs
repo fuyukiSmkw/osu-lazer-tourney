@@ -185,10 +185,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
             => bindable.GetType().GetProperty("Value")?.GetValue(bindable);
 
         /// <summary>
+        /// Reads the default value of a live bindable, used to restore it after the tournament
+        /// replaces it with the model default.
+        /// </summary>
+        public static object? GetBindableDefault(object bindable)
+            => bindable.GetType().GetProperty("Default")?.GetValue(bindable);
+
+        /// <summary>
         /// Writes a live value (as produced by <see cref="ToLiveValue"/>) into a bindable.
         /// </summary>
         public static void SetBindableValue(object bindable, object? value)
             => bindable.GetType().GetProperty("Value")?.SetValue(bindable, value);
+
+        /// <summary>
+        /// Writes a default value into a bindable, so the settings reset button restores
+        /// the tournament model default rather than lazer's own setting default.
+        /// </summary>
+        public static void SetBindableDefault(object bindable, object? value)
+            => bindable.GetType().GetProperty("Default")?.SetValue(bindable, value);
 
         /// <summary>
         /// Converts a bracket model value (bool, double or int) into a live value for the

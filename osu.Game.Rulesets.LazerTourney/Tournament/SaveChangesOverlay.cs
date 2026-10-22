@@ -29,6 +29,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         public bool HasUnsavedChanges => saveChangesButton.Enabled.Value;
 
+        /// <summary>
+        /// Saves the current bracket immediately.
+        /// </summary>
+        public void Save() => saveChanges();
+
         public SaveChangesOverlay()
         {
             RelativeSizeAxes = Axes.Both;

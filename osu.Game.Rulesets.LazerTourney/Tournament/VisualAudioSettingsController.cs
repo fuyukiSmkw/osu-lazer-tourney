@@ -34,7 +34,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         [Resolved]
         private IRulesetConfigCache configCache { get; set; } = null!;
 
-        private readonly List<System.Action> restoreActions = new List<System.Action>();
+        private readonly List<Action> restoreActions = new List<Action>();
 
         // Official ruleset types must only ever be touched from method bodies
         // (resolved lazily on first use), never from fields, signatures or attributes,
@@ -65,6 +65,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         public void ApplyFromBracket(VisualAudioSettings? bracket)
         {
             var effective = bracket ?? new VisualAudioSettings();
+            var defaults = new VisualAudioSettings();
 
             restoreActions.Clear();
 
@@ -72,15 +73,38 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             {
                 var bindable = config.GetBindable<T>(setting);
                 T value = bindable.Value;
-                restoreActions.Add(() => bindable.Value = value);
+                T defaultValue = bindable.Default;
+                restoreActions.Add(() =>
+                {
+                    bindable.Default = defaultValue;
+                    bindable.Value = value;
+                });
             }
 
-            void apply<T>(OsuSetting setting, T value) => config.GetBindable<T>(setting).Value = value;
+            void apply<T>(OsuSetting setting, T value, T defaultValue)
+            {
+                var bindable = config.GetBindable<T>(setting);
+                // The reset button follows the bindable's default, so expose the tournament
+                // model defaults instead of lazer's own setting defaults.
+                bindable.Default = defaultValue;
+                bindable.Value = value;
+            }
 
             void backupAudio(BindableDouble bindable)
             {
                 double value = bindable.Value;
-                restoreActions.Add(() => bindable.Value = value);
+                double defaultValue = bindable.Default;
+                restoreActions.Add(() =>
+                {
+                    bindable.Default = defaultValue;
+                    bindable.Value = value;
+                });
+            }
+
+            void applyAudio(BindableDouble bindable, double value, double defaultValue)
+            {
+                bindable.Default = defaultValue;
+                bindable.Value = value;
             }
 
             backup<ScoringMode>(OsuSetting.ScoreDisplayMode);
@@ -112,34 +136,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             backup<bool>(OsuSetting.GameplayDisableWinKey);
             backup<bool>(OsuSetting.IncreaseFirstObjectVisibility);
 
-            apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode);
-            apply(OsuSetting.HitLighting, effective.HitLighting);
-            apply(OsuSetting.StarFountains, effective.StarFountains);
-            apply(OsuSetting.VolumeInactive, effective.VolumeInactive);
-            audio.VolumeTrack.Value = effective.MusicVolume;
-            audio.VolumeSample.Value = effective.EffectVolume;
-            apply(OsuSetting.HitsoundVolume, effective.HitsoundVolume);
-            apply(OsuSetting.PositionalHitsoundsLevel, effective.PositionalHitsoundsLevel);
-            apply(OsuSetting.AlwaysPlayFirstComboBreak, effective.AlwaysPlayFirstComboBreak);
-            apply(OsuSetting.DimLevel, effective.DimLevel);
-            apply(OsuSetting.BlurLevel, effective.BlurLevel);
-            apply(OsuSetting.LightenDuringBreaks, effective.LightenDuringBreaks);
-            apply(OsuSetting.FadePlayfieldWhenHealthLow, effective.FadePlayfieldWhenHealthLow);
-            apply(OsuSetting.BeatmapSkins, effective.BeatmapSkins);
-            apply(OsuSetting.BeatmapColours, effective.BeatmapColours);
-            apply(OsuSetting.BeatmapHitsounds, effective.BeatmapHitsounds);
-            apply(OsuSetting.ShowStoryboard, effective.ShowStoryboard);
-            apply(OsuSetting.ComboColourNormalisationAmount, effective.ComboColourNormalisationAmount);
-            apply(OsuSetting.HUDVisibilityMode, effective.HUDVisibilityMode);
-            apply(OsuSetting.ReplaySettingsOverlay, effective.ReplaySettingsOverlay);
-            apply(OsuSetting.KeyOverlay, effective.KeyOverlay);
-            apply(OsuSetting.GameplayLeaderboard, effective.GameplayLeaderboard);
-            apply(OsuSetting.ShowHealthDisplayWhenCantFail, effective.ShowHealthDisplayWhenCantFail);
-            apply(OsuSetting.GameplayCursorSize, effective.GameplayCursorSize);
-            apply(OsuSetting.AutoCursorSize, effective.AutoCursorSize);
-            apply(OsuSetting.GameplayCursorDuringTouch, effective.GameplayCursorDuringTouch);
-            apply(OsuSetting.GameplayDisableWinKey, effective.GameplayDisableWinKey);
-            apply(OsuSetting.IncreaseFirstObjectVisibility, effective.IncreaseFirstObjectVisibility);
+            apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode, defaults.ScoreDisplayMode);
+            apply(OsuSetting.HitLighting, effective.HitLighting, defaults.HitLighting);
+            apply(OsuSetting.StarFountains, effective.StarFountains, defaults.StarFountains);
+            apply(OsuSetting.VolumeInactive, effective.VolumeInactive, defaults.VolumeInactive);
+            applyAudio(audio.VolumeTrack, effective.MusicVolume, defaults.MusicVolume);
+            applyAudio(audio.VolumeSample, effective.EffectVolume, defaults.EffectVolume);
+            apply(OsuSetting.HitsoundVolume, effective.HitsoundVolume, defaults.HitsoundVolume);
+            apply(OsuSetting.PositionalHitsoundsLevel, effective.PositionalHitsoundsLevel, defaults.PositionalHitsoundsLevel);
+            apply(OsuSetting.AlwaysPlayFirstComboBreak, effective.AlwaysPlayFirstComboBreak, defaults.AlwaysPlayFirstComboBreak);
+            apply(OsuSetting.DimLevel, effective.DimLevel, defaults.DimLevel);
+            apply(OsuSetting.BlurLevel, effective.BlurLevel, defaults.BlurLevel);
+            apply(OsuSetting.LightenDuringBreaks, effective.LightenDuringBreaks, defaults.LightenDuringBreaks);
+            apply(OsuSetting.FadePlayfieldWhenHealthLow, effective.FadePlayfieldWhenHealthLow, defaults.FadePlayfieldWhenHealthLow);
+            apply(OsuSetting.BeatmapSkins, effective.BeatmapSkins, defaults.BeatmapSkins);
+            apply(OsuSetting.BeatmapColours, effective.BeatmapColours, defaults.BeatmapColours);
+            apply(OsuSetting.BeatmapHitsounds, effective.BeatmapHitsounds, defaults.BeatmapHitsounds);
+            apply(OsuSetting.ShowStoryboard, effective.ShowStoryboard, defaults.ShowStoryboard);
+            apply(OsuSetting.ComboColourNormalisationAmount, effective.ComboColourNormalisationAmount, defaults.ComboColourNormalisationAmount);
+            apply(OsuSetting.HUDVisibilityMode, effective.HUDVisibilityMode, defaults.HUDVisibilityMode);
+            apply(OsuSetting.ReplaySettingsOverlay, effective.ReplaySettingsOverlay, defaults.ReplaySettingsOverlay);
+            apply(OsuSetting.KeyOverlay, effective.KeyOverlay, defaults.KeyOverlay);
+            apply(OsuSetting.GameplayLeaderboard, effective.GameplayLeaderboard, defaults.GameplayLeaderboard);
+            apply(OsuSetting.ShowHealthDisplayWhenCantFail, effective.ShowHealthDisplayWhenCantFail, defaults.ShowHealthDisplayWhenCantFail);
+            apply(OsuSetting.GameplayCursorSize, effective.GameplayCursorSize, defaults.GameplayCursorSize);
+            apply(OsuSetting.AutoCursorSize, effective.AutoCursorSize, defaults.AutoCursorSize);
+            apply(OsuSetting.GameplayCursorDuringTouch, effective.GameplayCursorDuringTouch, defaults.GameplayCursorDuringTouch);
+            apply(OsuSetting.GameplayDisableWinKey, effective.GameplayDisableWinKey, defaults.GameplayDisableWinKey);
+            apply(OsuSetting.IncreaseFirstObjectVisibility, effective.IncreaseFirstObjectVisibility, defaults.IncreaseFirstObjectVisibility);
         }
 
         /// <summary>
@@ -206,6 +230,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         public void ApplyRulesetFromBracket(RulesetSettings? bracket)
         {
             var effective = bracket ?? new RulesetSettings();
+            var defaults = new RulesetSettings();
 
             foreach (var section in RulesetSettingDescriptors.Sections)
             {
@@ -222,6 +247,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                         continue;
 
                     backupBindable(bindable);
+                    RulesetSettingDescriptors.SetBindableDefault(bindable,
+                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(defaults)));
                     RulesetSettingDescriptors.SetBindableValue(bindable,
                         RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(effective)));
                 }
@@ -263,7 +290,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private void backupBindable(object bindable)
         {
             object? value = RulesetSettingDescriptors.GetBindableValue(bindable);
-            restoreActions.Add(() => RulesetSettingDescriptors.SetBindableValue(bindable, value));
+            object? defaultValue = RulesetSettingDescriptors.GetBindableDefault(bindable);
+            restoreActions.Add(() =>
+            {
+                RulesetSettingDescriptors.SetBindableDefault(bindable, defaultValue);
+                RulesetSettingDescriptors.SetBindableValue(bindable, value);
+            });
         }
     }
 }
