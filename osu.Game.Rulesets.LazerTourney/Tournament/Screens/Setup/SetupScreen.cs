@@ -10,6 +10,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Configuration;
+using osu.Framework.Extensions.LocalisationExtensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
@@ -22,11 +23,13 @@ using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Localisation;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
+using osu.Game.Resources.Localisation.Web;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
@@ -190,6 +193,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                                 coreSettingsSection(inRoom),
                                 refereeApiSection(),
                                 webSocketSection(),
+                                notificationSettingsSection(),
                             }),
                             columnFlow(new Drawable[]
                             {
@@ -654,6 +658,39 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         }
 
         private string webSocketUrl() => $"ws://127.0.0.1:{TourneyDataWebSocketServer.ResolvePort(tournamentStorage.WebSocketPort.Value)}{TourneyDataWebSocketServer.PATH}";
+
+        /// <summary>
+        /// Mirrors lazer's Online / Alerts and Privacy settings. These are global lazer
+        /// settings and deliberately do not touch the tournament bracket data.
+        /// </summary>
+        private Drawable notificationSettingsSection() => new SetupSection("Notification settings", prominent: true)
+        {
+            Children = new Drawable[]
+            {
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnMentioned,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnUsernameMentioned),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnPrivateMessage,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnPrivateMessage),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnFriendPresenceChange,
+                    HintText = OnlineSettingsStrings.NotifyOnFriendPresenceChangeTooltip,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnFriendPresenceChange),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = AccountsStrings.PrivacyFriendsOnly.ToSentence(),
+                    HintText = AccountsStrings.PrivacyFriendsOnlyInfo.ToSentence(),
+                    Current = config.GetBindable<bool>(OsuSetting.PMFriendsOnly),
+                }),
+            },
+        };
 
         private void updateTokenRow()
         {
