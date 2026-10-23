@@ -66,6 +66,54 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public Bindable<ResultScreenStyle> ResultScreen = new Bindable<ResultScreenStyle>(ResultScreenStyle.LazerDefault);
 
         /// <summary>
+        /// The background shown when the main tournament video is unavailable.
+        /// </summary>
+        [DefaultValue(DefaultBackgroundStyle.DefaultGrayGradient)]
+        public Bindable<DefaultBackgroundStyle> DefaultBackground = new Bindable<DefaultBackgroundStyle>(DefaultBackgroundStyle.DefaultGrayGradient);
+
+        /// <summary>
+        /// Top colour used by <see cref="DefaultBackgroundStyle.CustomColors"/>, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(DefaultBackgroundColours.GRAY_TOP)]
+        public Bindable<string> DefaultBackgroundTopColour = new Bindable<string>(DefaultBackgroundColours.GRAY_TOP);
+
+        /// <summary>
+        /// Bottom colour used by <see cref="DefaultBackgroundStyle.CustomColors"/>, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(DefaultBackgroundColours.GRAY_BOTTOM)]
+        public Bindable<string> DefaultBackgroundBottomColour = new Bindable<string>(DefaultBackgroundColours.GRAY_BOTTOM);
+
+        /// <summary>
+        /// Whether each gameplay spectate cell shows the player's username.
+        /// </summary>
+        [DefaultValue(true)]
+        public BindableBool ShowPlayerUsernames = new BindableBool(true);
+
+        /// <summary>
+        /// Background colour for red team elements, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(TournamentColours.DEFAULT_TEAM_COLOUR_RED)]
+        public Bindable<string> TeamColourRed = new Bindable<string>(TournamentColours.DEFAULT_TEAM_COLOUR_RED);
+
+        /// <summary>
+        /// Username text colour for red team players, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(TournamentColours.DEFAULT_TEAM_NAME_COLOUR_RED)]
+        public Bindable<string> TeamNameColourRed = new Bindable<string>(TournamentColours.DEFAULT_TEAM_NAME_COLOUR_RED);
+
+        /// <summary>
+        /// Background colour for blue team elements, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(TournamentColours.DEFAULT_TEAM_COLOUR_BLUE)]
+        public Bindable<string> TeamColourBlue = new Bindable<string>(TournamentColours.DEFAULT_TEAM_COLOUR_BLUE);
+
+        /// <summary>
+        /// Username text colour for blue team players, in <c>#rrggbb</c> format.
+        /// </summary>
+        [DefaultValue(TournamentColours.DEFAULT_TEAM_NAME_COLOUR_BLUE)]
+        public Bindable<string> TeamNameColourBlue = new Bindable<string>(TournamentColours.DEFAULT_TEAM_NAME_COLOUR_BLUE);
+
+        /// <summary>
         /// Whether map pool panels show the category mod image (from RoundBeatmap.Mods).
         /// </summary>
         [DefaultValue(true)]

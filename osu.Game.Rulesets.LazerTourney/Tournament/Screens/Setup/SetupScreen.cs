@@ -13,6 +13,7 @@ using osu.Framework.Configuration;
 using osu.Framework.Extensions.LocalisationExtensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Localisation;
@@ -99,21 +100,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         {
             InternalChildren = new Drawable[]
             {
-                new Box
+                new PopoverContainer
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Colour = ColourProvider.Background5,
-                },
-                new OsuScrollContainer
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Child = fillFlow = new FillFlowContainer
+                    Children = new Drawable[]
                     {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        Padding = new MarginPadding(10),
-                        Spacing = new Vector2(10),
+                        new Box
+                        {
+                            RelativeSizeAxes = Axes.Both,
+                            Colour = ColourProvider.Background5,
+                        },
+                        new OsuScrollContainer
+                        {
+                            RelativeSizeAxes = Axes.Both,
+                            Child = fillFlow = new FillFlowContainer
+                            {
+                                RelativeSizeAxes = Axes.X,
+                                AutoSizeAxes = Axes.Y,
+                                Direction = FillDirection.Vertical,
+                                Padding = new MarginPadding(10),
+                                Spacing = new Vector2(10),
+                            },
+                        },
                     },
                 },
             };
@@ -284,7 +292,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// <summary>
         /// Builds the Visual &amp; Audio settings section. Controls bind the lazer settings directly,
         /// so edits apply live; values are persisted to the bracket file on save.
-        /// The result screen style is a tournament-owned setting, so it is not backed up/restored.
+        /// The result screen and default background styles are tournament-owned settings,
+        /// so they are not backed up/restored.
         /// </summary>
         private Drawable visualAudioSettingsSection()
         {
@@ -313,11 +322,33 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             {
                 Children = new Drawable[]
                 {
-                    subSection("Result screen",
+                    subSection("Tourney settings",
                         enumDropdown(
                             "Result screen",
                             LadderInfo.ResultScreen,
-                            "Which result screen is shown after a play or replay finishes. Applies to spectated match cells and showcase replays.")),
+                            "Which result screen is shown after a play or replay finishes. Applies to spectated match cells and showcase replays."),
+                        new DefaultBackgroundSettings(),
+                        checkbox(
+                            "Show player usernames",
+                            LadderInfo.ShowPlayerUsernames,
+                            "Show each player's username in the bottom-right corner of gameplay cells.")),
+                    subSection("Team colors",
+                        colourPicker(
+                            "Red team background",
+                            LadderInfo.TeamColourRed,
+                            "Background colour used for red team headers, map pool buttons and pick/ban markers."),
+                        colourPicker(
+                            "Red team username",
+                            LadderInfo.TeamNameColourRed,
+                            "Username text colour for red team players."),
+                        colourPicker(
+                            "Blue team background",
+                            LadderInfo.TeamColourBlue,
+                            "Background colour used for blue team headers, map pool buttons and pick/ban markers."),
+                        colourPicker(
+                            "Blue team username",
+                            LadderInfo.TeamNameColourBlue,
+                            "Username text colour for blue team players.")),
                     subSection("General",
                         enumDropdown(
                             "Score display mode",
@@ -802,6 +833,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 ShowRevertToDefaultButton = showRevertToDefaultButton,
             };
 
+        private static Drawable colourPicker(string caption, Bindable<string> current, string? description = null)
+            => new SettingsItemV2(new FormColourPicker(current)
+            {
+                Caption = caption,
+                HintText = hintText(description),
+            });
+
         private static LocalisableString hintText(string? description) =>
             string.IsNullOrEmpty(description) ? default : new LocalisableString(description);
 
@@ -809,6 +847,83 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         {
             Children = children,
         };
+
+        /// <summary>
+        /// The tournament video fallback settings. The custom colour rows are only visible
+        /// while <see cref="DefaultBackgroundStyle.CustomColors"/> is selected.
+        /// </summary>
+        private partial class DefaultBackgroundSettings : FillFlowContainer
+        {
+            [Resolved]
+            private LadderInfo ladderInfo { get; set; } = null!;
+
+            private readonly Bindable<DefaultBackgroundStyle> style = new Bindable<DefaultBackgroundStyle>();
+            private FillFlowContainer customColours = null!;
+            private bool customColourRowsVisible;
+
+            [BackgroundDependencyLoader]
+            private void load()
+            {
+                RelativeSizeAxes = Axes.X;
+                AutoSizeAxes = Axes.Y;
+                Direction = FillDirection.Vertical;
+                Spacing = new Vector2(0, SettingsSection.ITEM_SPACING_V2);
+
+                style.BindTo(ladderInfo.DefaultBackground);
+
+                Children = new Drawable[]
+                {
+                    enumDropdown(
+                        "Default background",
+                        ladderInfo.DefaultBackground,
+                        "Background shown when no main tournament video is available."),
+                    customColours = new FillFlowContainer
+                    {
+                        RelativeSizeAxes = Axes.X,
+                        AutoSizeAxes = Axes.Y,
+                        Direction = FillDirection.Vertical,
+                        Spacing = new Vector2(0, SettingsSection.ITEM_SPACING_V2),
+                    },
+                };
+
+                style.BindValueChanged(_ => updateCustomColoursVisibility(), true);
+            }
+
+            private void updateCustomColoursVisibility()
+            {
+                bool show = ladderInfo.DefaultBackground.Value == DefaultBackgroundStyle.CustomColors;
+
+                if (show == customColourRowsVisible)
+                    return;
+
+                customColourRowsVisible = show;
+
+                if (show)
+                {
+                    customColours.Children = new Drawable[]
+                    {
+                        colourPicker(
+                            "Gradient top colour",
+                            ladderInfo.DefaultBackgroundTopColour,
+                            "Top colour of the custom gradient."),
+                        colourPicker(
+                            "Gradient bottom colour",
+                            ladderInfo.DefaultBackgroundBottomColour,
+                            "Bottom colour of the custom gradient."),
+                    };
+                }
+                else
+                    customColours.Clear();
+            }
+
+            protected override void Dispose(bool isDisposing)
+            {
+                base.Dispose(isDisposing);
+
+                if (isDisposing)
+                    style.UnbindAll();
+            }
+        }
 
         /// <summary>
         /// A settings subsection using the same spacing and typography as lazer's settings overlay.

@@ -120,6 +120,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private IReadOnlyList<SpectateCell>? redCells;
         private IReadOnlyList<SpectateCell>? blueCells;
+        private Bindable<string>? teamNameColourRed;
+        private Bindable<string>? teamNameColourBlue;
 
         private long? clockItemId;
         private bool clockFromItem;
@@ -262,6 +264,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             beatmapAvailabilityTracker.Availability.BindValueChanged(onBeatmapAvailabilityChanged, true);
 
+            teamNameColourRed = ladder.TeamNameColourRed.GetBoundCopy();
+            teamNameColourBlue = ladder.TeamNameColourBlue.GetBoundCopy();
+            teamNameColourRed.BindValueChanged(_ => refreshTeamNameColours());
+            teamNameColourBlue.BindValueChanged(_ => refreshTeamNameColours());
+
             // Filtered to inserted sets, matching SpectatorScreen.beatmapsChanged.
             realmSubscription = realm.RegisterForNotifications<BeatmapSetInfo>(
                 r => r.All<BeatmapSetInfo>().Where(s => !s.DeletePending),
@@ -387,6 +394,41 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         /// <summary>
+        /// Reapplies the configured team name colours to cells that already show a player.
+        /// Colours are stored as plain strings, so a value change would otherwise only be
+        /// visible after the next room update.
+        /// </summary>
+        private void refreshTeamNameColours()
+        {
+            var room = multiplayerClient.Room;
+
+            if (room == null || redCells == null || blueCells == null)
+                return;
+
+            // Match assignSide(): side colours are only used for team rooms or slot-based rooms.
+            bool usesSideColours = room.MatchState is TeamVersusRoomState
+                                   || (room.MatchState is StandardMatchRoomState standard && standard.Slots?.Any(id => id != null) == true);
+
+            if (!usesSideColours)
+                return;
+
+            var red = TournamentColours.GetTeamNameColour(TeamColour.Red, ladder);
+            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
+
+            foreach (var cell in redCells)
+            {
+                if (cell.AssignedUserId != null)
+                    cell.UpdateUsernameColour(red);
+            }
+
+            foreach (var cell in blueCells)
+            {
+                if (cell.AssignedUserId != null)
+                    cell.UpdateUsernameColour(blue);
+            }
+        }
+
+        /// <summary>
         /// Assigns users to one side's cells. Returns the assigned user ID per cell (null for idle slots).
         /// Cells still showing gameplay (results or last frames) are pinned to their owner:
         /// their label is never rewritten here, and <paramref name="reservedIds"/> (those owners)
@@ -395,8 +437,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private List<int?> assignSide(MultiplayerRoom room, IReadOnlyList<SpectateCell> cells, int sideIndex, HashSet<int> reservedIds)
         {
             var result = new List<int?>();
-            var red = TournamentColours.GetTeamNameColour(TeamColour.Red);
-            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue);
+            var red = TournamentColours.GetTeamNameColour(TeamColour.Red, ladder);
+            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
 
             if (room.MatchState is StandardMatchRoomState matchState && matchState.Slots?.Any(id => id != null) == true)
             {
@@ -955,7 +997,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     var roomUser = multiplayerClient.Room?.Users.FirstOrDefault(u => u.UserID == userId);
                     Color4 teamColour;
                     if (roomUser?.MatchState is osu.Game.Online.Multiplayer.MatchTypes.TeamVersus.TeamVersusUserState tvs)
-                        teamColour = tvs.TeamID == 0 ? TournamentColours.GetTeamNameColour(TeamColour.Red) : TournamentColours.GetTeamNameColour(TeamColour.Blue);
+                        teamColour = tvs.TeamID == 0 ? TournamentColours.GetTeamNameColour(TeamColour.Red, ladder) : TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
                     else
                         teamColour = Color4.White;
                     cell.Assign(apiUser.Username, teamColour, userId);

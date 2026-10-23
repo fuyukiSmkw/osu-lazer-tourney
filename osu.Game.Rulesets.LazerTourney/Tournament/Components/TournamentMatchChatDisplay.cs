@@ -255,9 +255,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 if (info.CurrentMatch.Value is TournamentMatch match)
                 {
                     if (match.Team1.Value?.Players.Any(u => u.OnlineID == Message.Sender.OnlineID) == true)
-                        UsernameColour = TournamentColours.COLOUR_RED;
+                        UsernameColour = TournamentColours.GetTeamNameColour(TeamColour.Red, info);
                     else if (match.Team2.Value?.Players.Any(u => u.OnlineID == Message.Sender.OnlineID) == true)
-                        UsernameColour = TournamentColours.COLOUR_BLUE;
+                        UsernameColour = TournamentColours.GetTeamNameColour(TeamColour.Blue, info);
                 }
             }
         }

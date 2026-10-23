@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Colour;
 using osu.Framework.Graphics.Containers;
@@ -10,15 +11,25 @@ using osu.Framework.Graphics.Video;
 using osu.Framework.Timing;
 using osu.Game.Graphics;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 {
     public partial class TourneyVideo : CompositeDrawable
     {
+        private static readonly Colour4 gradient_top = Colour4.FromHex(DefaultBackgroundColours.GRAY_TOP);
+        private static readonly Colour4 gradient_bottom = Colour4.FromHex(DefaultBackgroundColours.GRAY_BOTTOM);
+        private static readonly Colour4 green_screen = Colour4.FromHex(DefaultBackgroundColours.GREEN_SCREEN);
+
         private readonly string filename;
         private readonly bool drawFallbackGradient;
         private Video? video;
         private ManualClock? manualClock;
+        private Box? fallbackBox;
+        private bool subscribedToBackgroundSettings;
+
+        [Resolved(canBeNull: true)]
+        private LadderInfo? ladderInfo { get; set; }
 
         public bool VideoAvailable => video != null;
 
@@ -45,12 +56,75 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             }
             else if (drawFallbackGradient)
             {
-                InternalChild = new Box
+                InternalChild = fallbackBox = new Box
                 {
-                    Colour = ColourInfo.GradientVertical(OsuColour.Gray(0.3f), OsuColour.Gray(0.6f)),
                     RelativeSizeAxes = Axes.Both,
                 };
+
+                updateFallbackColour();
+
+                if (ladderInfo != null)
+                {
+                    ladderInfo.DefaultBackground.ValueChanged += onBackgroundSettingChanged;
+                    ladderInfo.DefaultBackgroundTopColour.ValueChanged += onBackgroundColourChanged;
+                    ladderInfo.DefaultBackgroundBottomColour.ValueChanged += onBackgroundColourChanged;
+                    subscribedToBackgroundSettings = true;
+                }
             }
+        }
+
+        private void onBackgroundSettingChanged(ValueChangedEvent<DefaultBackgroundStyle> e)
+        {
+            updateFallbackColour();
+        }
+
+        private void onBackgroundColourChanged(ValueChangedEvent<string> e)
+        {
+            updateFallbackColour();
+        }
+
+        private void updateFallbackColour()
+        {
+            if (fallbackBox == null)
+                return;
+
+            DefaultBackgroundStyle style = ladderInfo?.DefaultBackground.Value ?? DefaultBackgroundStyle.DefaultGrayGradient;
+
+            if (style == DefaultBackgroundStyle.GreenScreen)
+            {
+                fallbackBox.Colour = green_screen;
+                return;
+            }
+
+            if (style == DefaultBackgroundStyle.CustomColors)
+            {
+                fallbackBox.Colour = ColourInfo.GradientVertical(
+                    parseColour(ladderInfo?.DefaultBackgroundTopColour.Value, gradient_top),
+                    parseColour(ladderInfo?.DefaultBackgroundBottomColour.Value, gradient_bottom));
+                return;
+            }
+
+            fallbackBox.Colour = ColourInfo.GradientVertical(OsuColour.Gray(0.3f), OsuColour.Gray(0.6f));
+        }
+
+        private static Colour4 parseColour(string? value, Colour4 fallback)
+        {
+            if (value == null || value.Length != 7 || value[0] != '#' || !Colour4.TryParseHex(value, out Colour4 colour))
+                return fallback;
+
+            return colour;
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            if (isDisposing && subscribedToBackgroundSettings && ladderInfo != null)
+            {
+                ladderInfo.DefaultBackground.ValueChanged -= onBackgroundSettingChanged;
+                ladderInfo.DefaultBackgroundTopColour.ValueChanged -= onBackgroundColourChanged;
+                ladderInfo.DefaultBackgroundBottomColour.ValueChanged -= onBackgroundColourChanged;
+            }
+
+            base.Dispose(isDisposing);
         }
 
         private bool loop;

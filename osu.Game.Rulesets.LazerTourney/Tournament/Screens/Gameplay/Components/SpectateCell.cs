@@ -5,7 +5,6 @@ using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
-using osu.Framework.Graphics.Sprites;
 using osu.Framework.Utils;
 using osu.Game.Beatmaps;
 using osu.Game.Configuration;
@@ -43,6 +42,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         private OsuSpriteText usernameText = null!;
         private Color4 usernameColour;
+        private string assignedUsername = string.Empty;
         private Container logoContainer = null!;
         private OsuLogo logo = null!;
         private Background? idleBackground;
@@ -80,6 +80,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// Whether gameplay (or its result/last frame) is currently attached.
         /// </summary>
         public bool HasPlay => PlayArea != null;
+
+        /// <summary>
+        /// Whether the assigned player's username should be visible.
+        /// </summary>
+        public BindableBool ShowUsername { get; } = new BindableBool(true);
 
         public TournamentPlayerArea? PlayArea { get; private set; }
 
@@ -136,6 +141,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     ShadowColour = new Color4(0, 0, 0, 0.5f),
                 },
             };
+
+            ShowUsername.BindValueChanged(_ => updateUsernameVisibility(), true);
 
             backgroundSource = config.GetBindable<BackgroundSource>(OsuSetting.MenuBackgroundSource).GetBoundCopy();
             currentSkin = skins.CurrentSkin.GetBoundCopy();
@@ -283,10 +290,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             usernameText.FinishTransforms();
             usernameText.Scale = Vector2.One;
 
-            usernameText.Text = username ?? string.Empty;
+            assignedUsername = username ?? string.Empty;
+            usernameText.Text = assignedUsername;
             usernameText.Colour = usernameColour = colour;
-            usernameText.Alpha = string.IsNullOrEmpty(username) ? 0 : 1;
+            updateUsernameVisibility();
             AssignedUserId = userId;
+        }
+
+        private void updateUsernameVisibility()
+        {
+            usernameText.Alpha = ShowUsername.Value && !string.IsNullOrEmpty(assignedUsername) ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Reapplies the team text colour without reassigning the player (keeps the label,
+        /// its transforms and the pinned owner intact).
+        /// </summary>
+        public void UpdateUsernameColour(Color4 colour)
+        {
+            usernameColour = colour;
+            usernameText.Colour = colour;
         }
 
         /// <summary>

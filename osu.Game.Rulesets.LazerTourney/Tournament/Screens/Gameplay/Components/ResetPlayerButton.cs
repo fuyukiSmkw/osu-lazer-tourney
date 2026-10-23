@@ -8,16 +8,13 @@ using osu.Framework.Extensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Cursor;
-using osu.Framework.Graphics.Sprites;
 using osu.Framework.Graphics.UserInterface;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.Multiplayer;
-using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
-using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay;
 using osuTK;
 using osuTK.Graphics;
 
@@ -30,6 +27,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
     {
         private readonly SpectateSession spectateSession;
         private readonly TournamentOnlineState onlineState;
+
+        [Resolved]
+        private LadderInfo ladderInfo { get; set; } = null!;
 
         public ResetPlayerButton(SpectateSession spectateSession, TournamentOnlineState onlineState)
         {
@@ -65,7 +65,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             {
                 for (int i = 0; i < redCells.Count; i++)
                 {
-                    cellEntries.Add((redCells[i], $"Red {i + 1}", TournamentColours.GetTeamColour(TeamColour.Red)));
+                    cellEntries.Add((redCells[i], $"Red {i + 1}", TournamentColours.GetTeamColour(TeamColour.Red, ladderInfo)));
                 }
             }
 
@@ -73,7 +73,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             {
                 for (int i = 0; i < blueCells.Count; i++)
                 {
-                    cellEntries.Add((blueCells[i], $"Blue {i + 1}", TournamentColours.GetTeamColour(TeamColour.Blue)));
+                    cellEntries.Add((blueCells[i], $"Blue {i + 1}", TournamentColours.GetTeamColour(TeamColour.Blue, ladderInfo)));
                 }
             }
 

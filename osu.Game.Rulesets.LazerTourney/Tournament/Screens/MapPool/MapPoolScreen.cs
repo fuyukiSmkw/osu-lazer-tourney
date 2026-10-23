@@ -54,6 +54,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
         private OsuButton buttonBlueProtect = null!;
         private OsuColour colours = new();
 
+        private Bindable<string>? teamColourRed;
+        private Bindable<string>? teamColourBlue;
+
         private ScheduledDelegate? scheduledScreenChange;
 
         [BackgroundDependencyLoader]
@@ -111,14 +114,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Protect",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Protect),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
                                     },
                                     buttonBlueProtect = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Protect",
                                         Action = () => setMode(TeamColour.Blue, ChoiceType.Protect),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
                                     },
                                 },
                                 // line 2: ban
@@ -129,14 +132,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Ban",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Ban),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
                                     },
                                     buttonBlueBan = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Ban",
                                         Action = () => setMode(TeamColour.Blue, ChoiceType.Ban),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
                                     },
                                 },
                                 // line 3: pick
@@ -147,14 +150,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Red Pick",
                                         Action = () => setMode(TeamColour.Red, ChoiceType.Pick),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
                                     },
                                     buttonBluePick = new TourneyButton
                                     {
                                         RelativeSizeAxes = Axes.X,
                                         Text = "Blue Pick",
                                         Action = () => setMode(TeamColour.Blue, ChoiceType.Pick),
-                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
                                     },
                                 },
                             }
@@ -259,6 +262,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
             splitMapPoolByMods.BindValueChanged(_ => updateDisplay());
             displayCategoryModIcon.BindValueChanged(_ => updateDisplay());
             displayRequiredMods.BindValueChanged(_ => updateDisplay());
+
+            teamColourRed = LadderInfo.TeamColourRed.GetBoundCopy();
+            teamColourBlue = LadderInfo.TeamColourBlue.GetBoundCopy();
+            teamColourRed.BindValueChanged(_ => updateTeamButtonColours());
+            teamColourBlue.BindValueChanged(_ => updateTeamButtonColours());
+        }
+
+        private void updateTeamButtonColours()
+        {
+            var red = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo);
+            var blue = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo);
+
+            buttonRedBan.BackgroundColour = red;
+            buttonBlueBan.BackgroundColour = blue;
+            buttonRedPick.BackgroundColour = red;
+            buttonBluePick.BackgroundColour = blue;
+            buttonRedProtect.BackgroundColour = red;
+            buttonBlueProtect.BackgroundColour = blue;
         }
 
         private void setMode(TeamColour colour, ChoiceType choiceType)

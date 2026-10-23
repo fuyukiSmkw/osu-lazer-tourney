@@ -32,14 +32,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         public PortTextBox(string caption, Bindable<int> current, string? description = null, bool showRevertToDefaultButton = true)
         {
-            this.current = current;
+            // Store a bound copy rather than the model bindable itself. Drawables automatically call
+            // UnbindAll() on their IUnbindable fields when disposed, which would otherwise clear every
+            // other listener on the shared config bindable.
+            this.current = current.GetBoundCopy();
 
             RelativeSizeAxes = Axes.X;
             AutoSizeAxes = Axes.Y;
 
-            int defaultPort = isValidPort(current.Default) ? current.Default : current.Value;
+            int defaultPort = isValidPort(this.current.Default) ? this.current.Default : this.current.Value;
 
-            text = new Bindable<string>(current.Value.ToString(CultureInfo.InvariantCulture))
+            text = new Bindable<string>(this.current.Value.ToString(CultureInfo.InvariantCulture))
             {
                 Default = defaultPort.ToString(CultureInfo.InvariantCulture),
             };
@@ -59,13 +62,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             };
 
             text.ValueChanged += onTextChanged;
-            current.ValueChanged += onCurrentChanged;
+            this.current.ValueChanged += onCurrentChanged;
 
             // Normalise/recover after empty or out-of-range input.
             numberBox.OnCommit += (_, _) =>
             {
                 if (!text.Disabled)
-                    text.Value = current.Value.ToString(CultureInfo.InvariantCulture);
+                    text.Value = this.current.Value.ToString(CultureInfo.InvariantCulture);
             };
         }
 

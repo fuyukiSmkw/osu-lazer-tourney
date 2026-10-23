@@ -9,8 +9,6 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Threading;
 using osu.Game.Graphics.Backgrounds;
-using osu.Framework.Graphics.UserInterface;
-using osu.Game.Graphics.UserInterface;
 using osu.Game.Graphics.UserInterfaceV2;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Online.Multiplayer.MatchTypes.TeamVersus;
@@ -235,6 +233,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             SpectateCell makeCell()
             {
                 var cell = new SpectateCell(backgroundLoader);
+                cell.ShowUsername.BindTo(LadderInfo.ShowPlayerUsernames);
                 cells.Add(cell);
                 return cell;
             }
