@@ -100,7 +100,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         /// <summary>
         /// WebSocket server exposing tournament data for tosu-compatible overlays.
-        /// Runs on port 50727 to avoid conflict with tosu's default port 24050.
+        /// The port is configurable in Setup (default 50727, avoiding tosu's default 24050).
         /// </summary>
         [Cached]
         private readonly TourneyDataWebSocketServer tourneyDataServer = new TourneyDataWebSocketServer();

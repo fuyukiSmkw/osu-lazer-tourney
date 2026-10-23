@@ -129,7 +129,29 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         protected override void LoadComplete()
         {
             base.LoadComplete();
+
+            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateConnectionRow();
+            }));
+
+            refereeAuth.HasValidToken.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateTokenRow();
+            }));
+
             onlineState.RoomJoined.BindValueChanged(_ => Schedule(reload), true);
+
+            refereeAuth.RefreshStatusAsync().ContinueWith(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                {
+                    updateTokenRow();
+                    updateConnectionRow();
+                }
+            }));
         }
 
         public override void Hide()
@@ -484,8 +506,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         }
 
         /// <summary>
-        /// Builds the Referee hub API section. Client credentials live in the bracket file;
-        /// access tokens live per tournament in the shared ini file and are never shared.
+        /// Builds the Referee hub API section. Client credentials, access tokens and the
+        /// local callback port all live in the shared ini file, never in bracket data.
         /// </summary>
         private Drawable refereeApiSection()
         {
@@ -499,23 +521,36 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
             guide.AddText("Control multiplayer rooms through the referee hub API.\n\n");
             guide.AddText("1. Create an OAuth application at https://osu.ppy.sh/home/account/edit (Account settings, OAuth section). "); guide.AddArbitraryDrawable(new ExternalLinkButton("https://osu.ppy.sh/home/account/edit#new-oauth-application"));
-            guide.AddText($"\n\n2. Set its Application Callback URL to {RefereeAuthController.CallbackUrl} (Copy callback URL button below).\n\n");
+            guide.AddText("\n\n2. Set its Application Callback URL to the callback URL shown below (Copy URL button).\n\n");
             guide.AddText("3. Enter the Client ID and Client Secret below.\n\n");
             guide.AddText("4. Press Authorise and approve in the browser.\n\n");
             guide.AddText("Note: unless the application is owned by a bot account, only its owner can complete the authorisation. "
-                          + "Credentials and tokens live in tournament-lazer.ini and never leave this machine.");
+                          + "Credentials, tokens and ports live in tournament-lazer.ini and never leave this machine.");
+
+            refereePortBox = new PortTextBox(
+                "Callback port",
+                tournamentStorage.RefereeCallbackPort,
+                "Port used by the local OAuth callback listener. It must match the OAuth application's callback URL. "
+                + "Locked while an access token is valid or the hub is connected.");
+
+            refereePortBox.ValueChanged += () => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateCallbackUrlRow();
+            });
 
             var section = new SetupSection("Referee hub API settings", prominent: true)
             {
                 Children = new Drawable[]
                 {
                     guide,
-                    new ActionableInfo
+                    refereePortBox,
+                    callbackUrlRow = new ActionableInfo
                     {
                         Label = "Callback URL",
                         ButtonText = "Copy URL",
-                        Action = refereeAuth.CopyCallbackUrl,
-                        Value = RefereeAuthController.CallbackUrl,
+                        Action = () => clipboard?.SetText(refereeAuth.CallbackUrl),
+                        Value = refereeAuth.CallbackUrl,
                     },
                     textBox("Client ID", tournamentStorage.RefereeClientId, showRevertToDefaultButton: false),
                     textBox("Client secret", tournamentStorage.RefereeClientSecret, showRevertToDefaultButton: false),
@@ -555,27 +590,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 },
             };
 
-            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
-            {
-                if (!IsDisposed)
-                    updateConnectionRow();
-            }));
-
-            refereeAuth.RefreshStatusAsync()
-                       .ContinueWith(_ => Schedule(() =>
-                       {
-                           if (!IsDisposed)
-                           {
-                               updateTokenRow();
-                               updateConnectionRow();
-                           }
-                       }));
+            updateTokenRow();
 
             return section;
         }
 
-        private ActionableInfo tokenRow = null!;
-        private ActionableInfo connectionRow = null!;
+        private ActionableInfo? tokenRow;
+        private ActionableInfo? connectionRow;
+        private ActionableInfo? callbackUrlRow;
+        private ActionableInfo? webSocketUrlRow;
+        private PortTextBox? refereePortBox;
 
         /// <summary>
         /// Builds the tosu-compatible WebSocket data feed section: explains how to point an
@@ -584,9 +608,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// </summary>
         private Drawable webSocketSection()
         {
-            string wsUrl = $"ws://127.0.0.1:{TourneyDataWebSocketServer.PORT}{TourneyDataWebSocketServer.PATH}";
-            string backgroundUrl = $"http://127.0.0.1:{TourneyDataWebSocketServer.PORT}{TourneyDataWebSocketServer.BACKGROUND_PATH}";
-
             var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 14))
             {
                 RelativeSizeAxes = Axes.X,
@@ -595,31 +616,50 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 Colour = ColourProvider.Content2,
             };
 
-            guide.AddText($"While the tournament plugin is open, it hosts a tosu-compatible WebSocket v1 data stream at {wsUrl}.\n\n");
-            guide.AddText($"To reuse an existing tosu overlay, point its WebSocket URL from tosu's default (ws://127.0.0.1:24050/ws) to {wsUrl}: the field layout (tourney.manager, tourney.ipcClients, menu.bm, …) follows tosu's v1 schema, so usually only the URL changes.\n\n");
-            guide.AddText($"The current beatmap's background image is additionally served at {backgroundUrl}.\n\n");
+            guide.AddText($"While the tournament plugin is open, it hosts a tosu-compatible WebSocket v1 data stream on the configured port (default {TourneyDataWebSocketServer.DEFAULT_PORT}).\n\n");
+            guide.AddText("To reuse an existing tosu overlay, point its WebSocket URL from tosu's default (ws://127.0.0.1:24050/ws) to the WebSocket URL shown below: the field layout (tourney.manager, tourney.ipcClients, menu.bm, …) follows tosu's v1 schema, so usually only the URL changes.\n\n");
+            guide.AddText("The current beatmap's background image is additionally served at /backgroundImage on the same port.\n\n");
             guide.AddText("Note: the stream covers the fields stream overlays commonly use; some tosu-specific fields are still placeholders.\n\n");
             guide.AddText("A minimal sample overlay: ");
             guide.AddArbitraryDrawable(new ExternalLinkButton(TourneyDataWebSocketServer.SAMPLE_OVERLAY_URL));
+
+            webSocketUrlRow = new ActionableInfo
+            {
+                Label = "WebSocket URL",
+                ButtonText = "Copy URL",
+                Action = () => clipboard?.SetText(webSocketUrl()),
+                Value = webSocketUrl(),
+            };
+
+            var portBox = new PortTextBox(
+                "WebSocket port",
+                tournamentStorage.WebSocketPort,
+                "Port used by the external overlay. The WebSocket server restarts automatically shortly after a valid change.");
+
+            portBox.ValueChanged += () => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateWebSocketUrlRow();
+            });
 
             return new SetupSection("WebSocket data feed (tosu-compatible)", prominent: true)
             {
                 Children = new Drawable[]
                 {
                     guide,
-                    new ActionableInfo
-                    {
-                        Label = "WebSocket URL",
-                        ButtonText = "Copy URL",
-                        Action = () => clipboard?.SetText(wsUrl),
-                        Value = wsUrl,
-                    },
+                    portBox,
+                    webSocketUrlRow,
                 },
             };
         }
 
+        private string webSocketUrl() => $"ws://127.0.0.1:{TourneyDataWebSocketServer.ResolvePort(tournamentStorage.WebSocketPort.Value)}{TourneyDataWebSocketServer.PATH}";
+
         private void updateTokenRow()
         {
+            if (tokenRow == null)
+                return;
+
             tokenRow.Value = refereeAuth.StatusText.Value;
             tokenRow.Failing = !refereeAuth.HasValidToken.Value;
             tokenRow.ButtonText = refereeAuth.HasValidToken.Value ? "Revoke" : "Authorise";
@@ -628,11 +668,43 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void updateConnectionRow()
         {
+            if (connectionRow == null)
+                return;
+
             connectionRow.Value = refereeAuth.ConnectionStatusText.Value;
 
             bool connected = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
-            connectionRow.ButtonText = connected ? "Disconnect" : "Connect";
-            connectionRow.ButtonEnabled = connected || refereeAuth.HasValidToken.Value;
+            bool connecting = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connecting;
+
+            connectionRow.ButtonText = connecting ? "Connecting..." : connected ? "Disconnect" : "Connect";
+            connectionRow.ButtonEnabled = !connecting && (connected || refereeAuth.HasValidToken.Value);
+
+            updateRefereePortState();
+        }
+
+        private void updateCallbackUrlRow()
+        {
+            if (callbackUrlRow == null)
+                return;
+
+            callbackUrlRow.Value = refereeAuth.CallbackUrl;
+        }
+
+        private void updateWebSocketUrlRow()
+        {
+            if (webSocketUrlRow == null)
+                return;
+
+            webSocketUrlRow.Value = webSocketUrl();
+        }
+
+        private void updateRefereePortState()
+        {
+            if (refereePortBox == null)
+                return;
+
+            refereePortBox.Disabled = refereeAuth.HasValidToken.Value
+                                      || refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
         }
 
         private static Drawable checkbox(string caption, Bindable<bool> current, string? description = null)

@@ -28,6 +28,7 @@ using osu.Game.Overlays;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Judgements;
+using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components;
@@ -42,11 +43,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 {
     /// <summary>
     /// Minimal WebSocket server exposing tournament spectate data in a tosu-compatible format.
-    /// Runs on port 50727 to avoid conflict with tosu's default 24050.
+    /// The port is configurable (default 50727, avoiding tosu's default 24050).
     /// </summary>
     public partial class TourneyDataWebSocketServer : Component
     {
-        public const int PORT = 50727;
+        public const int DEFAULT_PORT = 50727;
         public const string PATH = "/ws";
 
         /// <summary>
@@ -67,6 +68,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         private readonly ConcurrentDictionary<string, WebSocket> clients = new();
         private CancellationTokenSource? cancellationTokenSource;
         private ScheduledDelegate? broadcastDelegate;
+        private ScheduledDelegate? restartDelegate;
+        private int listeningPort;
+        private bool broadcasting;
+
+        [Resolved]
+        private TournamentStorage tournamentStorage { get; set; } = null!;
 
         [Resolved]
         private TournamentOnlineState onlineState { get; set; } = null!;
@@ -162,15 +169,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         protected override void LoadComplete()
         {
             base.LoadComplete();
-            startServer();
 
-            // Start periodic broadcast
+            broadcasting = true;
+            startServer(normalisePort(tournamentStorage.WebSocketPort.Value));
+
+            tournamentStorage.WebSocketPort.BindValueChanged(onWebSocketPortChanged);
+
+            // Start periodic broadcast.
             broadcastDelegate = Scheduler.AddDelayed(broadcastLoop, broadcast_interval_ms);
+        }
+
+        private void onWebSocketPortChanged(ValueChangedEvent<int> e)
+        {
+            if (IsDisposed)
+                return;
+
+            Schedule(() =>
+            {
+                if (IsDisposed)
+                    return;
+
+                // Debounce so typing a port does not repeatedly tear down the server.
+                restartDelegate?.Cancel();
+                restartDelegate = Scheduler.AddDelayed(() => restartServer(normalisePort(e.NewValue)), 750);
+            });
         }
 
         private void broadcastLoop()
         {
-            if (cancellationTokenSource?.IsCancellationRequested == true)
+            if (!broadcasting)
                 return;
 
             BroadcastState();
@@ -178,32 +205,78 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             broadcastDelegate = Scheduler.AddDelayed(broadcastLoop, broadcast_interval_ms);
         }
 
-        private void startServer()
+        private void restartServer(int port)
         {
+            if (port == listeningPort && httpListener?.IsListening == true)
+                return;
+
+            stopServer();
+            startServer(port);
+        }
+
+        private void startServer(int port)
+        {
+            HttpListener? listener = null;
+
             try
             {
-                httpListener = new HttpListener();
-                httpListener.Prefixes.Add($"http://127.0.0.1:{PORT}/");
-                httpListener.Start();
+                listener = new HttpListener();
+                listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+                listener.Start();
 
-                cancellationTokenSource = new CancellationTokenSource();
-                _ = Task.Run(() => acceptLoop(cancellationTokenSource.Token));
+                var cts = new CancellationTokenSource();
 
-                Logger.Log($"TourneyDataWebSocketServer started on http://127.0.0.1:{PORT}{PATH}");
+                httpListener = listener;
+                cancellationTokenSource = cts;
+                listeningPort = port;
+
+                _ = Task.Run(() => acceptLoop(listener, cts.Token));
+
+                Logger.Log($"TourneyDataWebSocketServer started on http://127.0.0.1:{port}{PATH}");
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Failed to start TourneyDataWebSocketServer");
+                try { listener?.Close(); } catch { }
+
+                Logger.Error(ex, $"Failed to start TourneyDataWebSocketServer on port {port}");
+                stopServer();
             }
         }
 
-        private async Task acceptLoop(CancellationToken ct)
+        private void stopServer()
         {
-            while (!ct.IsCancellationRequested && httpListener?.IsListening == true)
+            var cts = cancellationTokenSource;
+            cancellationTokenSource = null;
+            cts?.Cancel();
+            cts?.Dispose();
+
+            var listener = httpListener;
+            httpListener = null;
+            listeningPort = 0;
+
+            try { listener?.Stop(); } catch { }
+            try { listener?.Close(); } catch { }
+
+            foreach (var (_, ws) in clients)
+            {
+                try { ws.Abort(); } catch { }
+                try { ws.Dispose(); } catch { }
+            }
+
+            clients.Clear();
+        }
+
+        public static int ResolvePort(int port) => normalisePort(port);
+
+        private static int normalisePort(int port) => port is > 0 and <= 65535 ? port : DEFAULT_PORT;
+
+        private async Task acceptLoop(HttpListener listener, CancellationToken ct)
+        {
+            while (!ct.IsCancellationRequested && listener.IsListening)
             {
                 try
                 {
-                    var context = await httpListener.GetContextAsync();
+                    var context = await listener.GetContextAsync();
                     string? absolutePath = context.Request.Url?.AbsolutePath;
 
                     if (context.Request.IsWebSocketRequest && absolutePath == PATH)
@@ -1192,6 +1265,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         {
             base.Dispose(isDisposing);
 
+            tournamentStorage.WebSocketPort.ValueChanged -= onWebSocketPortChanged;
+
+            broadcasting = false;
+
+            restartDelegate?.Cancel();
+            restartDelegate = null;
+
             broadcastDelegate?.Cancel();
             broadcastDelegate = null;
 
@@ -1199,18 +1279,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             difficultyCancellation?.Dispose();
             difficultyCancellation = null;
 
-            cancellationTokenSource?.Cancel();
-            cancellationTokenSource?.Dispose();
-
-            foreach (var (_, ws) in clients)
-            {
-                try { ws.Dispose(); } catch { }
-            }
-            clients.Clear();
-
-            httpListener?.Stop();
-            httpListener?.Close();
-            httpListener = null;
+            stopServer();
         }
     }
 }

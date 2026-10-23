@@ -22,6 +22,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
             base.InitialiseDefaults();
 
             SetDefault(StorageConfig.CurrentTournament, default_tournament);
+            SetDefault(StorageConfig.RefereeCallbackPort, 60727);
+            SetDefault(StorageConfig.WebSocketPort, 50727);
             SetDefault(StorageConfig.RefereeClientId, string.Empty);
             SetDefault(StorageConfig.RefereeClientSecret, string.Empty);
             SetDefault(StorageConfig.RefereeAccessToken, string.Empty);
@@ -33,6 +35,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
     public enum StorageConfig
     {
         CurrentTournament,
+
+        /// <summary>
+        /// Local port used for the referee OAuth callback listener.
+        /// </summary>
+        RefereeCallbackPort,
+
+        /// <summary>
+        /// Local port used by the tosu-compatible WebSocket data stream.
+        /// </summary>
+        WebSocketPort,
 
         /// <summary>
         /// OAuth client ID for the referee hub API. One user, one client.

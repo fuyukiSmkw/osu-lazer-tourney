@@ -48,6 +48,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         public IEnumerable<string> ListTournaments() => AllTournaments.GetDirectories(string.Empty).Order(StringComparer.CurrentCultureIgnoreCase);
 
         /// <summary>
+        /// Local port used for the referee OAuth callback listener.
+        /// </summary>
+        public Bindable<int> RefereeCallbackPort => TournamentConfigManager.GetBindable<int>(StorageConfig.RefereeCallbackPort);
+
+        /// <summary>
+        /// Local port used by the tosu-compatible WebSocket data stream.
+        /// </summary>
+        public Bindable<int> WebSocketPort => TournamentConfigManager.GetBindable<int>(StorageConfig.WebSocketPort);
+
+        /// <summary>
         /// OAuth client ID for the referee hub API.
         /// </summary>
         public Bindable<string> RefereeClientId => TournamentConfigManager.GetBindable<string>(StorageConfig.RefereeClientId);

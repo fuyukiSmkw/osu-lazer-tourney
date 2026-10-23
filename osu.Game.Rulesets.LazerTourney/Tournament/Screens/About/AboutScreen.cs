@@ -447,7 +447,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
             GuideTextFormatter.AddFormattedText(flow, "7. Other stuff are mostly the same as / similar to old osu tournament client, and old `brackets.json` is **compatible**. More help: ");
             flow.AddArbitraryDrawable(new ExternalLinkButton("https://osu.ppy.sh/wiki/en/osu%21_tournament_client"));
             GuideTextFormatter.AddFormattedText(flow, "\n\n8. **Referee hub API**: the room can also be controlled programmatically (from bots or external tools) through the referee hub API; get credentials and authorise in the Setup screen (`Referee hub API settings`).\n\n");
-            GuideTextFormatter.AddFormattedText(flow, "9. **WebSocket data feed**: while the plugin is open it hosts a tosu-compatible WebSocket v1 stream; to reuse an existing tosu v1 overlay, just point it from tosu's `ws://127.0.0.1:24050/ws` to `ws://127.0.0.1:50727/ws` (see the Setup screen's `WebSocket data feed`). Sample overlay: ");
+            GuideTextFormatter.AddFormattedText(flow, "9. **WebSocket data feed**: while the plugin is open it hosts a tosu-compatible WebSocket v1 stream; to reuse an existing tosu v1 overlay, just point it from tosu's `ws://127.0.0.1:24050/ws` to the WebSocket URL shown in the Setup screen's `WebSocket data feed` (default `ws://127.0.0.1:50727/ws`, configurable there). Sample overlay: ");
             flow.AddArbitraryDrawable(new ExternalLinkButton(TourneyDataWebSocketServer.SAMPLE_OVERLAY_URL));
             GuideTextFormatter.AddFormattedText(flow, "\n\n10. Enjoy :)");
 
