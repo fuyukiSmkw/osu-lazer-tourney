@@ -19,6 +19,7 @@ using osu.Framework.Graphics.Sprites;
 using osu.Framework.Localisation;
 using osu.Framework.Platform;
 using osu.Game.Configuration;
+using osu.Game.Database;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
@@ -35,6 +36,7 @@ using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Rulesets.Scoring;
+using osu.Game.Skinning;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -74,6 +76,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         private OsuConfigManager config { get; set; } = null!;
 
         [Resolved]
+        private SkinManager skins { get; set; } = null!;
+
+        [Resolved]
         private AudioManager audio { get; set; } = null!;
 
         [Resolved]
@@ -94,6 +99,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         private readonly BindableBool quitArmed = new();
 
         private ActionableInfo? quitButton;
+
+        /// <summary>
+        /// Mirrors <c>SkinInfo.RANDOM_SKIN</c>, which is internal to osu.Game.
+        /// </summary>
+        private static readonly Guid random_skin_id = new Guid("D39DFEFB-477C-4372-B1EA-2BCEA5FB8908");
 
         [BackgroundDependencyLoader]
         private void load()
@@ -202,11 +212,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                                 refereeApiSection(),
                                 webSocketSection(),
                                 notificationSettingsSection(),
+                                rulesetSettingsSection(),
                             }),
                             columnFlow(new Drawable[]
                             {
                                 visualAudioSettingsSection(),
-                                rulesetSettingsSection(),
                             }),
                         },
                     },
@@ -292,6 +302,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// <summary>
         /// Builds the Visual &amp; Audio settings section. Controls bind the lazer settings directly,
         /// so edits apply live; values are persisted to the bracket file on save.
+        /// The skin selector binds lazer's own skin setting and is deliberately not stored in the bracket file.
         /// The result screen and default background styles are tournament-owned settings,
         /// so they are not backed up/restored.
         /// </summary>
@@ -318,10 +329,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                     config.GetBindable<bool>(OsuSetting.GameplayDisableWinKey)));
             }
 
+            var skinDropdown = new SkinDropdown
+            {
+                AlwaysShowSearchBar = true,
+                AllowNonContiguousMatching = true,
+                Caption = SkinSettingsStrings.CurrentSkin,
+                Items = skins.GetAllUsableSkins(),
+                Current = skins.CurrentSkinInfo,
+            };
+
+            // Mirror the official skin settings: "Random Skin" is a placeholder that immediately
+            // selects a random real skin instead of becoming the current skin.
+            skinDropdown.Current.BindValueChanged(skin =>
+            {
+                if (skin.NewValue.ID != random_skin_id)
+                    return;
+
+                skins.CurrentSkinInfo.Value = skin.OldValue;
+                skins.SelectRandomSkin();
+            });
+
             return new SetupSection("Visual & Audio settings", prominent: true)
             {
                 Children = new Drawable[]
                 {
+                    new SettingsItemV2(skinDropdown),
                     subSection("Tourney settings",
                         enumDropdown(
                             "Result screen",
@@ -923,6 +955,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 if (isDisposing)
                     style.UnbindAll();
             }
+        }
+
+        private partial class SkinDropdown : FormDropdown<Live<SkinInfo>>
+        {
+            protected override LocalisableString GenerateItemText(Live<SkinInfo> item) => item.ToString();
         }
 
         /// <summary>
