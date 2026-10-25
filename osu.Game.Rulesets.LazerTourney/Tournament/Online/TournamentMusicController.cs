@@ -85,6 +85,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 
         private bool handlingTrack;
         private bool hasRoomTrack;
+        private bool? allowTrackControlBeforeFreeze;
+        private bool listeningToTrackControl;
         private IDisposable? realmSubscription;
 
         protected override void LoadComplete()
@@ -108,6 +110,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                     beginHandlingTrack();
                 }
             }));
+
+            // Player loaders/results screens toggle global track control as they enter and leave.
+            // While a frozen state owns the track, keep it off: MusicController.onTrackCompleted
+            // would otherwise advance the global beatmap to a random set when the unlooped
+            // track ends (most visibly after a showcase replay finishes before its music).
+            music.AllowTrackControl.ValueChanged += onAllowTrackControlChanged;
+            listeningToTrackControl = true;
 
             // Downloads completing change local availability without changing the playlist item,
             // so refresh from storage inserts as well (mirrors SpectatorScreen.beatmapsChanged).
@@ -169,8 +178,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             if (State.Value == next)
                 return;
 
+            bool wasFrozen = isFrozenState(State.Value);
+
             State.Value = next;
-            MusicControlSuspended.Value = next is TournamentMusicState.Spectating or TournamentMusicState.InShowcase;
+
+            bool frozen = isFrozenState(next);
+
+            if (frozen && !wasFrozen)
+            {
+                // Frozen states own the global track: stop MusicController from selecting a new
+                // beatmap once the (unlooped) current track finishes. Restored on unfreeze.
+                allowTrackControlBeforeFreeze = music.AllowTrackControl.Value;
+                music.AllowTrackControl.Value = false;
+            }
+            else if (!frozen && wasFrozen)
+            {
+                music.AllowTrackControl.Value = allowTrackControlBeforeFreeze ?? true;
+                allowTrackControlBeforeFreeze = null;
+            }
+
+            MusicControlSuspended.Value = frozen;
+        }
+
+        private static bool isFrozenState(TournamentMusicState state)
+            => state is TournamentMusicState.Spectating or TournamentMusicState.InShowcase;
+
+        private void onAllowTrackControlChanged(ValueChangedEvent<bool> e)
+        {
+            if (e.NewValue && isFrozenState(State.Value))
+                music.AllowTrackControl.Value = false;
         }
 
         /// <summary>
@@ -448,6 +484,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
+
+            if (listeningToTrackControl)
+            {
+                listeningToTrackControl = false;
+                music.AllowTrackControl.ValueChanged -= onAllowTrackControlChanged;
+
+                // Never leave global track control disabled after the controller goes away mid-freeze.
+                if (allowTrackControlBeforeFreeze is bool allowTrackControl)
+                {
+                    music.AllowTrackControl.Value = allowTrackControl;
+                    allowTrackControlBeforeFreeze = null;
+                }
+            }
 
             realmSubscription?.Dispose();
             endHandlingTrack();
