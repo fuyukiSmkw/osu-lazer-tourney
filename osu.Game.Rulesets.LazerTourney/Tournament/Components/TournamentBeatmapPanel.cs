@@ -36,6 +36,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         public const float HEIGHT = 50;
 
         private readonly Bindable<TournamentMatch?> currentMatch = new Bindable<TournamentMatch?>();
+        private Bindable<string>? teamColourRed;
+        private Bindable<string>? teamColourBlue;
+        private LadderInfo ladderInfo = null!;
 
         private Box flash = null!;
 
@@ -59,6 +62,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [BackgroundDependencyLoader]
         private void load(LadderInfo ladder, IRulesetStore rulesets)
         {
+            ladderInfo = ladder;
             currentMatch.BindValueChanged(matchChanged);
             currentMatch.BindTo(ladder.CurrentMatch);
 
@@ -223,6 +227,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     },
                 },
             });
+
+            teamColourRed = ladder.TeamColourRed.GetBoundCopy();
+            teamColourBlue = ladder.TeamColourBlue.GetBoundCopy();
+            teamColourRed.BindValueChanged(_ => updateState());
+            teamColourBlue.BindValueChanged(_ => updateState());
         }
 
         /// <summary>
@@ -277,7 +286,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
                 BorderThickness = 6;
 
-                BorderColour = TournamentColours.GetTeamColour(newPlayChoice.Team);
+                BorderColour = TournamentColours.GetTeamColour(newPlayChoice.Team, ladderInfo);
 
                 switch (newPlayChoice.Type)
                 {
@@ -302,7 +311,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 Alpha = 1;
 
                 BorderThickness = 6;
-                BorderColour = TournamentColours.GetTeamColour(newProtectChoice.Team);
+                BorderColour = TournamentColours.GetTeamColour(newProtectChoice.Team, ladderInfo);
 
                 var captured = newProtectChoice;
                 Scheduler.AddDelayed(() =>
@@ -322,7 +331,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             protectMarker.Alpha = newProtectChoice != null ? 1 : 0;
 
             if (newProtectChoice != null)
-                protectMarkerBackground.Colour = TournamentColours.GetTeamColour(newProtectChoice.Team);
+                protectMarkerBackground.Colour = TournamentColours.GetTeamColour(newProtectChoice.Team, ladderInfo);
 
             protectChoice = newProtectChoice;
             playChoice = newPlayChoice;

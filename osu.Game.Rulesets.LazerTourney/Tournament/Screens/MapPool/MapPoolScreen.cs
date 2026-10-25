@@ -11,6 +11,7 @@ using osu.Framework.Input.Events;
 using osu.Framework.Logging;
 using osu.Framework.Threading;
 using osu.Game.Beatmaps;
+using osu.Game.Graphics;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Online.API;
 using osu.Game.Online.Multiplayer;
@@ -51,6 +52,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
         private OsuButton buttonBluePick = null!;
         private OsuButton buttonRedProtect = null!;
         private OsuButton buttonBlueProtect = null!;
+        private OsuColour colours = new();
+
+        private Bindable<string>? teamColourRed;
+        private Bindable<string>? teamColourBlue;
 
         private ScheduledDelegate? scheduledScreenChange;
 
@@ -84,7 +89,80 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                         {
                             Text = "Current Mode"
                         },
-                        buttonRedBan = new TourneyButton
+                        new GridContainer
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            ColumnDimensions = new[]
+                            {
+                                new Dimension(GridSizeMode.Relative, 0.5f),
+                                new Dimension()
+                            },
+                            RowDimensions = new[]
+                            {
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(GridSizeMode.AutoSize),
+                                new Dimension(GridSizeMode.AutoSize),
+                            },
+                            Content = new[]
+                            {
+                                // line 1: protect
+                                new Drawable[]
+                                {
+                                    buttonRedProtect = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Red Protect",
+                                        Action = () => setMode(TeamColour.Red, ChoiceType.Protect),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
+                                    },
+                                    buttonBlueProtect = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Blue Protect",
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Protect),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
+                                    },
+                                },
+                                // line 2: ban
+                                new Drawable[]
+                                {
+                                    buttonRedBan = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Red Ban",
+                                        Action = () => setMode(TeamColour.Red, ChoiceType.Ban),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
+                                    },
+                                    buttonBlueBan = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Blue Ban",
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Ban),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
+                                    },
+                                },
+                                // line 3: pick
+                                new Drawable[]
+                                {
+                                    buttonRedPick = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Red Pick",
+                                        Action = () => setMode(TeamColour.Red, ChoiceType.Pick),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo),
+                                    },
+                                    buttonBluePick = new TourneyButton
+                                    {
+                                        RelativeSizeAxes = Axes.X,
+                                        Text = "Blue Pick",
+                                        Action = () => setMode(TeamColour.Blue, ChoiceType.Pick),
+                                        BackgroundColour = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo),
+                                    },
+                                },
+                            }
+                        },
+                        /*buttonRedBan = new TourneyButton
                         {
                             RelativeSizeAxes = Axes.X,
                             Text = "Red Ban",
@@ -119,7 +197,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                             RelativeSizeAxes = Axes.X,
                             Text = "Blue Protect",
                             Action = () => setMode(TeamColour.Blue, ChoiceType.Protect)
-                        },
+                        },*/
                         new ControlPanel.Spacer(),
                         new TourneyButton
                         {
@@ -133,7 +211,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
                             LabelText = "Split display by mods",
                             Current = LadderInfo.SplitMapPoolByMods,
                         },
-                        new ControlPanel.Spacer(),
                         new OsuCheckbox
                         {
                             LabelText = "Show category mod icons",
@@ -185,6 +262,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
             splitMapPoolByMods.BindValueChanged(_ => updateDisplay());
             displayCategoryModIcon.BindValueChanged(_ => updateDisplay());
             displayRequiredMods.BindValueChanged(_ => updateDisplay());
+
+            teamColourRed = LadderInfo.TeamColourRed.GetBoundCopy();
+            teamColourBlue = LadderInfo.TeamColourBlue.GetBoundCopy();
+            teamColourRed.BindValueChanged(_ => updateTeamButtonColours());
+            teamColourBlue.BindValueChanged(_ => updateTeamButtonColours());
+        }
+
+        private void updateTeamButtonColours()
+        {
+            var red = TournamentColours.GetTeamColour(TeamColour.Red, LadderInfo);
+            var blue = TournamentColours.GetTeamColour(TeamColour.Blue, LadderInfo);
+
+            buttonRedBan.BackgroundColour = red;
+            buttonBlueBan.BackgroundColour = blue;
+            buttonRedPick.BackgroundColour = red;
+            buttonBluePick.BackgroundColour = blue;
+            buttonRedProtect.BackgroundColour = red;
+            buttonBlueProtect.BackgroundColour = blue;
         }
 
         private void setMode(TeamColour colour, ChoiceType choiceType)
@@ -244,7 +339,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.MapPool
 
             setMode(nextColour, nextType);
 
-            TeamColour getOppositeTeamColour(TeamColour colour) => colour == TeamColour.Red ? TeamColour.Blue : TeamColour.Red;
+            static TeamColour getOppositeTeamColour(TeamColour colour) => colour == TeamColour.Red ? TeamColour.Blue : TeamColour.Red;
         }
 
         protected override bool OnMouseDown(MouseDownEvent e)

@@ -3,9 +3,6 @@
 
 using System;
 using System.ComponentModel;
-using osu.Game.Rulesets.Mania.UI;
-using osu.Game.Rulesets.Taiko.Configuration;
-using osu.Game.Rulesets.UI;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
 {
@@ -17,6 +14,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
     /// <remarks>
     /// The field initialisers below are the single place that defines the defaults used when
     /// the bracket file has no such object or lacks individual fields. They copy lazer's own defaults.
+    /// Enum-valued settings are stored as plain integers on purpose: naming the official
+    /// ruleset enum types in field/attribute positions would statically bind this assembly
+    /// to the official ruleset assemblies and break plugin loading when they resolve late
+    /// (e.g. developer builds). integers read/write identically on the wire, since
+    /// Newtonsoft.Json serialises enums as numbers by default.
     /// </remarks>
     [Serializable]
     public class RulesetSettings
@@ -39,15 +41,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public bool ShowCursorTrail = true;
         [DefaultValue(false)]
         public bool ShowCursorRipples = false;
-        [DefaultValue(PlayfieldBorderStyle.None)]
-        public PlayfieldBorderStyle PlayfieldBorderStyle = PlayfieldBorderStyle.None;
+        // PlayfieldBorderStyle.None.
+        [DefaultValue(0)]
+        public int PlayfieldBorderStyle = 0;
     }
 
     [Serializable]
     public class TaikoRulesetSettings
     {
-        [DefaultValue(TaikoTouchControlScheme.KDDK)]
-        public TaikoTouchControlScheme TouchControlScheme = TaikoTouchControlScheme.KDDK;
+        // TaikoTouchControlScheme.KDDK.
+        [DefaultValue(0)]
+        public int TouchControlScheme = 0;
         [DefaultValue(true)]
         public bool HitAnimations = true;
         [DefaultValue(true)]
@@ -59,8 +63,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
     {
         [DefaultValue(8.0)]
         public double ScrollSpeed = 8.0;
-        [DefaultValue(ManiaScrollingDirection.Down)]
-        public ManiaScrollingDirection ScrollDirection = ManiaScrollingDirection.Down;
+        // ManiaScrollingDirection.Down.
+        [DefaultValue(1)]
+        public int ScrollDirection = 1;
         [DefaultValue(false)]
         public bool TimingBasedNoteColouring = false;
         [DefaultValue(false)]

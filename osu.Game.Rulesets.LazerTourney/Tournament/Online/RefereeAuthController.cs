@@ -37,9 +37,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
     /// </summary>
     public partial class RefereeAuthController : Component
     {
-        public const int CALLBACK_PORT = 60727;
+        public const int DEFAULT_CALLBACK_PORT = 60727;
 
-        public static string CallbackUrl => $"http://localhost:{CALLBACK_PORT}/";
+        /// <summary>
+        /// Local port currently used for the OAuth callback listener.
+        /// </summary>
+        public int CallbackPort
+        {
+            get
+            {
+                int port = tournamentStorage.RefereeCallbackPort.Value;
+                return port is > IPEndPoint.MinPort and <= IPEndPoint.MaxPort ? port : DEFAULT_CALLBACK_PORT;
+            }
+        }
+
+        public string CallbackUrl => $"http://localhost:{CallbackPort}/";
 
         private const string authorize_url = "https://osu.ppy.sh/oauth/authorize";
         private const string token_url = "https://osu.ppy.sh/oauth/token";
@@ -60,9 +72,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
 
         [Resolved(canBeNull: true)]
         private OsuGame? game { get; set; }
-
-        [Resolved(canBeNull: true)]
-        private Clipboard? clipboard { get; set; }
 
         /// <summary>
         /// Whether a usable access token exists.
@@ -149,14 +158,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             {
                 string state = Guid.NewGuid().ToString("N");
 
+                // Capture the URL for the whole flow so a concurrent port edit cannot make
+                // the authorisation redirect and the token exchange disagree.
+                string callbackUrl = CallbackUrl;
+
                 string url = $"{authorize_url}?client_id={Uri.EscapeDataString(clientId.Trim())}"
-                             + $"&redirect_uri={Uri.EscapeDataString(CallbackUrl)}"
+                             + $"&redirect_uri={Uri.EscapeDataString(callbackUrl)}"
                              + "&response_type=code"
                              + $"&scope={Uri.EscapeDataString(scopes)}"
                              + $"&state={state}";
 
                 listener = new HttpListener();
-                listener.Prefixes.Add(CallbackUrl);
+                listener.Prefixes.Add(callbackUrl);
                 listener.Start();
 
                 try
@@ -177,7 +190,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                     return false;
                 }
 
-                var tokens = await exchangeCodeAsync(clientId.Trim(), clientSecret.Trim(), code).ConfigureAwait(false);
+                var tokens = await exchangeCodeAsync(clientId.Trim(), clientSecret.Trim(), code, callbackUrl).ConfigureAwait(false);
 
                 if (tokens == null)
                 {
@@ -205,11 +218,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                 busy = false;
             }
         }
-
-        /// <summary>
-        /// Copies the localhost callback URL for pasting into the OAuth application form.
-        /// </summary>
-        public void CopyCallbackUrl() => clipboard?.SetText(CallbackUrl);
 
         /// <summary>
         /// Clears the stored tokens and drops the hub connection. The client ID and secret stay.
@@ -548,7 +556,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
             context.Response.Close();
         }
 
-        private static async Task<(string accessToken, string refreshToken, long expiresIn)?> exchangeCodeAsync(string clientId, string clientSecret, string code)
+        private static async Task<(string accessToken, string refreshToken, long expiresIn)?> exchangeCodeAsync(string clientId, string clientSecret, string code, string callbackUrl)
         {
             using var http = new HttpClient();
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -556,7 +564,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Online
                 ["grant_type"] = "authorization_code",
                 ["client_id"] = clientId,
                 ["client_secret"] = clientSecret,
-                ["redirect_uri"] = CallbackUrl,
+                ["redirect_uri"] = callbackUrl,
                 ["code"] = code,
             });
 

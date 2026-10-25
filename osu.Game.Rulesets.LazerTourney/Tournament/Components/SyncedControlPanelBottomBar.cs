@@ -28,7 +28,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 {
     /// <summary>
     /// Chat send box pinned to the control-panel bottom bar.
-    /// One instance is hosted in each of <c>MapPoolScreen</c> and <c>GameplayScreen</c>.
+    /// One instance is hosted in each stream screen's <see cref="SyncedControlPanel"/>;
+    /// all instances share the same draft and stay in sync (see remarks).
     /// </summary>
     /// <remarks>
     /// Data flow mirrors the room chat (<see cref="osu.Game.Screens.OnlinePlay.Match.Components.MatchChatDisplay"/>,
@@ -68,10 +69,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private TournamentChatTextBox textBox = null!;
         private TournamentChatCommandHandler? commandHandler;
         private TournamentSpriteText countdownText = null!;
+        private Framework.Graphics.Containers.Container historyContainer = null!;
 
         private Room? currentRoom;
         private long? lastRoomId;
         private int lastChannelId;
+
+        private const float history_height = 110;
+
+        private readonly bool showHistory;
+
+        private BindableBool dynamicShowHistory = null!;
+
+        /// <param name="showHistory">Whether to show a small read-only message list above the send box.</param>
+        public SyncedControlPanelBottomBar(bool showHistory = false)
+        {
+            this.showHistory = showHistory;
+        }
+
+        public SyncedControlPanelBottomBar(BindableBool showHistory)
+        {
+            dynamicShowHistory = new()
+            {
+                BindTarget = showHistory,
+            };
+        }
 
         [BackgroundDependencyLoader]
         private void load()
@@ -114,6 +136,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                 },
                             },
                         },
+                        historyContainer = new Framework.Graphics.Containers.Container
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                        },
                         textBox = new TournamentChatTextBox
                         {
                             RelativeSizeAxes = Axes.X,
@@ -127,11 +154,32 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 },
             };
 
+            if (dynamicShowHistory != null || showHistory)
+            {
+                // Small read-only message list between the title and the send box.
+                // MapPool/Gameplay omit it because the full-width stream chat is visible there.
+                historyContainer.Add(new TournamentMatchChatDisplay
+                {
+                    Anchor = Anchor.TopLeft,
+                    Origin = Anchor.TopLeft,
+                    RelativeSizeAxes = Axes.X,
+                    Height = history_height,
+                });
+            }
+
             textBox.OnCommit += postMessage;
             channel.BindValueChanged(onChannelChanged);
             timerService.RemainingSeconds.BindValueChanged(onRemainingSecondsChanged, true);
 
             commandHandler = new TournamentChatCommandHandler(client, refereeAuth, timerService, () => channel.Value, notify, api);
+
+            dynamicShowHistory?.BindValueChanged(e =>
+            {
+                if (e.NewValue)
+                    historyContainer.Show();
+                else
+                    historyContainer.Hide();
+            }, true);
         }
 
         /// <summary>
@@ -275,6 +323,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             commandHandler = null;
 
             channel.UnbindAll();
+
+            dynamicShowHistory?.UnbindAll();
 
             onlineState?.RoomJoined.ValueChanged -= onRoomJoinedChanged;
 

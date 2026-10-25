@@ -97,6 +97,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Schedule
                         }
                     }
                 },
+                new SyncedControlPanel(showChatHistory: true),
             };
         }
 

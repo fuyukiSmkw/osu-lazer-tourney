@@ -59,6 +59,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public APIMod[] SafeAllowedMods => AllowedMods ?? Array.Empty<APIMod>();
 
         /// <summary>
+        /// Custom mod-multiplier rule for this beatmap, as ModMult source text.
+        /// Fully overrides the round default when non-empty; empty means inheriting the round default.
+        /// Missing in old brackets, which read as empty.
+        /// </summary>
+        public string ModMultiplierRule = string.Empty;
+
+        /// <summary>
         /// Whether a live room playlist item represents this round map.
         /// Requires full equality (beatmap, ruleset, freestyle and mods).
         /// </summary>

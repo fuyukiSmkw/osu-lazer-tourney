@@ -3,6 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+#if DEBUG
+using System.Globalization;
+#endif
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -36,7 +39,6 @@ using osu.Game.Screens.Edit.Components;
 using osu.Game.Screens.Edit.Timing;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Play.HUD;
-using osu.Game.Screens.Play.PlayerSettings;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
@@ -86,6 +88,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
         private TournamentGameBase tournamentGame { get; set; } = null!;
 
         [Resolved]
+        private TournamentMusicController musicController { get; set; } = null!;
+
+        [Resolved]
         private MusicController music { get; set; } = null!;
 
         [Resolved(CanBeNull = true)]
@@ -98,10 +103,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
         private Container idleLayer = null!;
         private Container playerLayer = null!;
+#if DEBUG
+        private Container showcaseContent = null!;
+#endif
         private Container? playerContainer;
         private OsuScreenStack? playerStack;
         private FillFlowContainer transportSection = null!;
         private Container progressHost = null!;
+
+#if DEBUG
+        // Temporary showcase-only control for checking result/cell layouts at different widths.
+        private SettingsTextBox cellWidthTextBox = null!;
+        private bool cellWidthInitialised;
+#endif
 
         private int importGeneration;
         private IDisposable? beatmapArrivalSubscription;
@@ -118,6 +132,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
             preferNoVideo = config.GetBindable<bool>(OsuSetting.PreferNoVideo);
 
+            var content = new Container
+            {
+                Anchor = Anchor.Centre,
+                Origin = Anchor.Centre,
+                RelativeSizeAxes = Axes.Both,
+                Children = new Drawable[]
+                {
+                    idleLayer = new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                        Child = new SpectateCell(backgrounds)
+                        {
+                            // Idle look exactly like a gameplay spectate cell with no play.
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
+                        },
+                    },
+                    playerLayer = new Container
+                    {
+                        RelativeSizeAxes = Axes.Both,
+                    },
+                },
+            };
+
+#if DEBUG
+            showcaseContent = content;
+#endif
+
             AddRangeInternal(new Drawable[]
             {
                 new TournamentLogo(),
@@ -130,23 +172,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 {
                     Padding = new MarginPadding { Bottom = SongBar.HEIGHT },
                     RelativeSizeAxes = Axes.Both,
-                    Children = new Drawable[]
-                    {
-                        idleLayer = new Container
-                        {
-                            RelativeSizeAxes = Axes.Both,
-                            Child = new SpectateCell(backgrounds)
-                            {
-                                // Idle look exactly like a gameplay spectate cell with no play.
-                                Anchor = Anchor.Centre,
-                                Origin = Anchor.Centre,
-                            },
-                        },
-                        playerLayer = new Container
-                        {
-                            RelativeSizeAxes = Axes.Both,
-                        },
-                    }
+                    Child = content,
                 },
                 backgroundLoader,
                 new ControlPanel
@@ -159,6 +185,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                             Text = "Reset",
                             Action = resetToIdle,
                         },
+#if DEBUG
+                        cellWidthTextBox = new CellWidthTextBox(applyCellWidth)
+                        {
+                            LabelText = "Cell width (test)",
+                        },
+#endif
                         new EditorSidebarSection("Replay")
                         {
                             Children = new Drawable[]
@@ -252,8 +284,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                                 },
                             },
                         },
-                        new VisualSettings(),
-                        new AudioSettings(),
                     },
                 },
             });
@@ -263,7 +293,56 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 transportSection.Alpha = v.NewValue ? 1 : 0.4f;
                 updateProgress();
             }, true);
+
+            // Entering a room abandons showcase playback: the music controller hands
+            // globals back to the room, here we drop the player and restore the idle view.
+            onlineState.RoomJoined.BindValueChanged(joined =>
+            {
+                if (!joined.NewValue)
+                    return;
+
+                Schedule(() =>
+                {
+                    if (musicController.State.Value != TournamentMusicState.InShowcase && playerContainer == null && !replayController.HasPlayer.Value)
+                        return;
+
+                    // Controller already moved to InRoom on this same event; just clear visuals.
+                    // teardownPlayer is idempotent; idle fade restores the cell view.
+                    teardownPlayer();
+                    idleLayer.FadeIn(300);
+                });
+            });
         }
+
+#if DEBUG
+        protected override void Update()
+        {
+            base.Update();
+
+            if (cellWidthInitialised || !showcaseContent.IsLoaded || !cellWidthTextBox.IsLoaded)
+                return;
+
+            float width = showcaseContent.DrawWidth;
+
+            if (width <= 0)
+                return;
+
+            cellWidthInitialised = true;
+            cellWidthTextBox.Current.Value = width.ToString("0.##", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Temporary: resizes the showcase content (idle cell and replay/result area) for layout checks.
+        /// </summary>
+        private void applyCellWidth(string text)
+        {
+            if (!float.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out float width) || width <= 0)
+                return;
+
+            showcaseContent.RelativeSizeAxes = Axes.Y;
+            showcaseContent.Width = width;
+        }
+#endif
 
         /// <summary>
         /// Rebuilds the song progress bar for the current player.
@@ -313,6 +392,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                 return dependencies;
             }
         }
+
+#if DEBUG
+        private partial class CellWidthTextBox : SettingsTextBox
+        {
+            public CellWidthTextBox(Action<string> onCommit)
+            {
+                var textBox = (OsuTextBox)Control;
+
+                // Temporary test control: apply only on Enter, not on focus loss.
+                textBox.CommitOnFocusLost = false;
+                textBox.OnCommit += (sender, _) => onCommit(sender.Text);
+            }
+        }
+#endif
 
         private partial class SeekButton : IconButton
         {
@@ -586,25 +679,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
         }
 
         /// <summary>
-        /// Starts playback: points globals at the score (mirroring OsuGame.PresentScore),
+        /// Starts playback: freezes globals onto the score (showcase state),
         /// then pushes the loader onto the embedded stack with an idle crossfade.
         /// </summary>
         private void playScore(Score score)
         {
-            teardownPlayer();
-
             var rulesetInfo = rulesets.GetRuleset(score.ScoreInfo.Ruleset.OnlineID);
 
-            if (rulesetInfo != null)
-                tournamentGame.Ruleset.Value = rulesetInfo;
+            if (!musicController.EnterShowcase(rulesetInfo, score.ScoreInfo.BeatmapInfo, score.ScoreInfo.Mods))
+            {
+                notify("Cannot play showcase replay while in a room or spectating. Leave the room / reset first.");
+                return;
+            }
 
-            var local = beatmaps.QueryBeatmap(b => b.MD5Hash == score.ScoreInfo.BeatmapHash)
-                        ?? beatmaps.QueryBeatmap(b => b.OnlineID == score.ScoreInfo.BeatmapInfo.OnlineID);
-
-            if (local != null)
-                tournamentGame.Beatmap.Value = beatmaps.GetWorkingBeatmap(local);
-
-            tournamentGame.Mods.Value = score.ScoreInfo.Mods;
+            teardownPlayer();
 
             var working = beatmaps.GetWorkingBeatmap(score.ScoreInfo.BeatmapInfo);
 
@@ -632,7 +720,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
         /// <summary>
         /// Resets to idle: drops any in-flight import/download, clears the player,
-        /// and restores global beatmap/music (room item when joined, menu default otherwise).
+        /// and hands globals back (room item when joined, untouched menu playback otherwise).
         /// </summary>
         private void resetToIdle()
         {
@@ -642,26 +730,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
 
             idleLayer.FadeIn(300);
 
-            var item = onlineState.RoomJoined.Value ? onlineState.CurrentPlaylistItem.Value : null;
-
-            if (item == null)
-            {
-                tournamentGame.Beatmap.Value = beatmaps.GetWorkingBeatmap(null);
-                music.EnsurePlayingSomething();
-                return;
-            }
-
-            var rulesetInfo = rulesets.GetRuleset(item.RulesetID) ?? ladder.Ruleset.Value;
-
-            if (rulesetInfo != null)
-            {
-                tournamentGame.Ruleset.Value = rulesetInfo;
-                tournamentGame.Mods.Value = RoundBeatmap.InstantiateMods(item.RequiredMods.ToArray(), rulesetInfo.CreateInstance());
-            }
-
-            var local = beatmaps.QueryBeatmap(b => b.OnlineID == item.BeatmapID);
-            tournamentGame.Beatmap.Value = local == null ? beatmaps.GetWorkingBeatmap(null) : beatmaps.GetWorkingBeatmap(local);
-            music.EnsurePlayingSomething();
+            musicController.ExitShowcase();
         }
 
         private void teardownPlayer()

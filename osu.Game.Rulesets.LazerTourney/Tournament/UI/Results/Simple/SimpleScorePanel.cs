@@ -32,15 +32,15 @@ using osu.Game.Users;
 using osu.Framework.Graphics.Colour;
 using osu.Framework.Extensions.Color4Extensions;
 
-namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
+namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple
 {
     /// <summary>
-    /// Tournament score panel: static two-row layout, no popups and no animation.
+    /// Simple score panel: static two-row layout, no popups and no animation.
     /// Top row shows the player and the song; bottom row shows the accuracy circle
     /// next to the detailed results. Content pieces are the official
     /// contracted/expanded panel contents, reused verbatim.
     /// </summary>
-    public partial class TournamentScorePanel : CompositeDrawable
+    public partial class SimpleScorePanel : CompositeDrawable
     {
         private static readonly ColourInfo expanded_top_layer_colour = ColourInfo.GradientVertical(Color4Extensions.FromHex("#444"), Color4Extensions.FromHex("#333"));
         private static readonly ColourInfo expanded_middle_layer_colour = ColourInfo.GradientVertical(Color4Extensions.FromHex("#555"), Color4Extensions.FromHex("#333"));
@@ -68,7 +68,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved]
         private ScoreManager scoreManager { get; set; } = null!;
 
-        public TournamentScorePanel(ScoreInfo score)
+        public SimpleScorePanel(ScoreInfo score)
         {
             Score = score;
             withFlair = !score.User.IsBot;
@@ -375,7 +375,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                                             {
                                                                 new Drawable[]
                                                                 {
-                                                                    scoreCounter = new TournamentScoreCounter(!withFlair)
+                                                                    scoreCounter = new SimpleScoreCounter(!withFlair)
                                                                     {
                                                                         Anchor = Anchor.CentreLeft,
                                                                         Origin = Anchor.CentreLeft,
@@ -502,7 +502,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             });
         }
 
-        public partial class TournamentScoreCounter(bool playSamples = false) : TotalScoreCounter(playSamples)
+        public partial class SimpleScoreCounter(bool playSamples = false) : TotalScoreCounter(playSamples)
         {
             protected override OsuSpriteText CreateSpriteText() => base.CreateSpriteText().With(s =>
             {

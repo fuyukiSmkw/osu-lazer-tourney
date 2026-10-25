@@ -43,7 +43,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.TeamIntro
                 {
                     RelativeSizeAxes = Axes.Both,
                 },
-                new ControlPanel
+                new SyncedControlPanel(showChatHistory: true)
                 {
                     Children = new Drawable[]
                     {

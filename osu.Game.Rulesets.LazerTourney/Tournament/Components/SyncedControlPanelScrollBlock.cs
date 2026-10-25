@@ -20,8 +20,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 {
     /// <summary>
     /// Scrollable block below the existing control-panel content.
-    /// One instance is hosted in each of <c>MapPoolScreen</c> and <c>GameplayScreen</c>;
-    /// both show the same live room data (participants + beatmap queue) and stay in sync
+    /// One instance is hosted in each stream screen's <see cref="SyncedControlPanel"/>;
+    /// all show the same live room data (participants + beatmap queue) and stay in sync
     /// because they bind to the shared <see cref="osu.Game.Online.Multiplayer.MultiplayerClient"/> state.
     /// </summary>
     /// <remarks>

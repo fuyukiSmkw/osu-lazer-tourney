@@ -1,6 +1,7 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -9,10 +10,12 @@ using osu.Framework.Graphics;
 using osu.Framework.Input.Handlers.Mouse;
 using osu.Framework.Logging;
 using osu.Framework.Platform;
+using osu.Framework.Screens;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Cursor;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
+using osu.Game.Overlays.Dialog;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
 {
@@ -44,8 +47,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private float originalToastTrayWidth;
         private bool toastTrayNarrowed;
 
-        public override void ExitTournament()
+        private bool exitConfirmed;
+
+        public override void ExitTournament(Action? beforeExit = null)
         {
+            if (!exitConfirmed && saveChangesOverlay?.HasUnsavedChanges == true)
+            {
+                if (dialogOverlay.CurrentDialog is TournamentExitDialog exitDialog)
+                {
+                    exitDialog.Flash();
+                    return;
+                }
+
+                dialogOverlay.Push(new TournamentExitDialog(
+                    () =>
+                    {
+                        saveChangesOverlay.Save();
+                        exitConfirmed = true;
+                        ExitTournament(beforeExit);
+                    },
+                    () =>
+                    {
+                        exitConfirmed = true;
+                        ExitTournament(beforeExit);
+                    }));
+
+                return;
+            }
+
             // Restore OS cursor hiding (set by OsuGame at startup); lazer cursor
             // visibility is restored automatically via CursorVisible.
             if (host?.Window != null)
@@ -53,7 +82,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             restoreToastTray();
 
-            base.ExitTournament();
+            base.ExitTournament(beforeExit);
+        }
+
+        public override bool OnExiting(ScreenExitEvent e)
+        {
+            // Any exit path that does not go through the save prompt must not silently
+            // discard unsaved bracket changes.
+            if (!exitConfirmed && saveChangesOverlay?.HasUnsavedChanges == true)
+                return true;
+
+            return base.OnExiting(e);
         }
 
         [BackgroundDependencyLoader]
@@ -82,8 +121,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // Clear the flag on enter; ExitTournament restores it.
             this.host = host;
 
-            if (host.Window != null)
-                host.Window.CursorState &= ~CursorState.Hidden;
+            host.Window?.CursorState &= ~CursorState.Hidden;
 
             loadingSpinner.Show();
 
@@ -100,15 +138,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                     return;
                 }
 
-                // Created and cached before async load: LoadComponentsAsync resolves dependencies
-                // during background load, which happens before the completion callback runs.
                 saveChangesOverlay = new SaveChangesOverlay
                 {
                     Depth = float.MinValue,
                 };
-
-                // Make the overlay resolvable for screens (e.g. SetupScreen quit confirmation).
-                CacheDependency(saveChangesOverlay);
 
                 LoadComponentsAsync(new Drawable[]
                 {
@@ -153,22 +186,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             base.LoadComplete();
             narrowToastTray();
 
-            // Alt+F4 / window close button: restore the user's settings immediately,
-            // as the debounced background save might not flush before shutdown.
-            // (Update thread by contract of the event.)
-            if (host != null)
-                host.ExitRequested += onHostExitRequested;
+            // Alt+F4 / window close button: route through the normal exit path and restore
+            // the user's settings immediately, as the debounced background save might not
+            // flush before shutdown. (Update thread by contract of the event.)
+            host?.ExitRequested += onHostExitRequested;
         }
 
         protected override void Dispose(bool isDisposing)
         {
-            if (host != null)
-                host.ExitRequested -= onHostExitRequested;
+            host?.ExitRequested -= onHostExitRequested;
 
             base.Dispose(isDisposing);
         }
 
-        private void onHostExitRequested() => RestoreVisualAudioSettings();
+        private void onHostExitRequested()
+        {
+            ExitTournament();
+        }
 
         /// <summary>
         /// Narrows the notification toast column while the tournament client is active so popups

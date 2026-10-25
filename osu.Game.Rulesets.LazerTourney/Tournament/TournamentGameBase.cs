@@ -64,18 +64,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private VisualAudioSettingsController visualAudioSettings = null!;
 
         /// <summary>
-        /// Exit the tournament client. Called from the setup screen's exit button.
+        /// Exit the tournament client. Called from the setup screen's exit button, the tournament
+        /// switcher and host exit requests.
         /// </summary>
-        public virtual void ExitTournament()
+        /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
+        public virtual void ExitTournament(Action? beforeExit = null)
         {
-            visualAudioSettings?.RestoreBackupAndSave();
+            beforeExit?.Invoke();
+            RestoreVisualAudioSettings();
             this.Exit();
         }
 
         protected override void Dispose(bool isDisposing)
         {
             // Covers exits that bypass ExitTournament (e.g. closing the window).
-            visualAudioSettings?.RestoreBackupAndSave();
+            RestoreVisualAudioSettings();
             base.Dispose(isDisposing);
         }
 
@@ -257,6 +260,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 dependencies.Cache(ladder);
 
                 visualAudioSettings.ApplyFromBracket(ladder.VisualAudioSettings);
+
                 visualAudioSettings.ApplyRulesetFromBracket(ladder.RulesetSettings);
 
                 bracketLoadTaskCompletionSource.SetResult(true);
@@ -446,6 +450,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // Snapshot live settings first, so saves persist them and the
             // unsaved-changes detection picks up slider/switch edits.
             visualAudioSettings.SnapshotToBracket(ladder.VisualAudioSettings ??= new VisualAudioSettings());
+
             visualAudioSettings.SnapshotRulesetToBracket(ladder.RulesetSettings ??= new RulesetSettings());
 
             foreach (var r in ladder.Rounds)

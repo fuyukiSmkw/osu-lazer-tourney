@@ -69,6 +69,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Ladder
                 }
             };
 
+            // The bracket editor hosts its own editing panel; only the display screen gets the synced room panel.
+            if (this is not LadderEditorScreen)
+                AddInternal(new SyncedControlPanel(showChatHistory: true));
+
             void addMatch(TournamentMatch match) =>
                 MatchesContainer.Add(new DrawableTournamentMatch(match, this is LadderEditorScreen)
                 {

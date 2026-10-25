@@ -25,13 +25,14 @@ using osu.Game.Online.Rooms;
 using osu.Game.Online.Spectator;
 using osu.Game.Replays;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models.ModMultiplier;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
+using osu.Game.Rulesets.Mods;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components;
 using osu.Game.Scoring;
 using osu.Game.Screens.OnlinePlay.Multiplayer;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
 using osu.Game.Screens.Play;
-using osu.Game.Screens.Play.Leaderboards;
 using osu.Game.Screens.Spectate;
 using osu.Game.Skinning;
 using osuTK.Graphics;
@@ -85,6 +86,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private TournamentMusicController musicController { get; set; } = null!;
 
         [Resolved]
+        private LadderInfo ladder { get; set; } = null!;
+
+        [Resolved]
         private Bindable<WorkingBeatmap> beatmap { get; set; } = null!;
 
         private readonly HashSet<int> watchedUsers = new HashSet<int>();
@@ -92,13 +96,32 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, SpectateCell> cellsByUser = new Dictionary<int, SpectateCell>();
         private readonly Dictionary<int, SpectatorPlayerClock> clocksByUser = new Dictionary<int, SpectatorPlayerClock>();
         private readonly Dictionary<int, Score> scoresByUser = new Dictionary<int, Score>();
+
+        /// <summary>
+        /// Playing-time mod snapshot per user, feeding provider weights. Unlike
+        /// <see cref="global::osu.Game.Online.Spectator.SpectatorScoreProcessor.Mods"/>, this is taken
+        /// from the final Playing state (same source as the cells) and never goes stale.
+        /// Survives score removal (fail/quit) so frozen totals keep the right weight.
+        /// </summary>
+        private readonly Dictionary<int, Mod[]> modsByUser = new Dictionary<int, Mod[]>();
         private readonly HashSet<int> seenBreak = new HashSet<int>();
         private readonly HashSet<int> comboSubscribed = new HashSet<int>();
+
+        /// <summary>
+        /// User IDs for which the next <see cref="startGameplay"/> should suppress
+        /// <see cref="PlayerLoader"/>'s audio side effects (track mute/stop + entrance filters).
+        /// Populated by <see cref="ResetPlayer"/>; consumed once per user in <see cref="startGameplay"/>.
+        /// Normal match start, full reset, and late joins do NOT set this, so they keep the
+        /// official entrance blur/fade behaviour. Only the explicit per-player reset uses it.
+        /// </summary>
+        private readonly HashSet<int> suppressAudioForUsers = new HashSet<int>();
         private Bindable<bool> preferNoVideo = null!;
         private readonly List<(BindableInt bindable, Action<ValueChangedEvent<int>> handler)> comboSubscriptions = new List<(BindableInt, Action<ValueChangedEvent<int>>)>();
 
         private IReadOnlyList<SpectateCell>? redCells;
         private IReadOnlyList<SpectateCell>? blueCells;
+        private Bindable<string>? teamNameColourRed;
+        private Bindable<string>? teamNameColourBlue;
 
         private long? clockItemId;
         private bool clockFromItem;
@@ -116,8 +139,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private bool gameplayVisible;
 
         private HashSet<int> providerUserIds = new HashSet<int>();
-        private TournamentLeaderboardProvider? leaderboardProvider;
+        private WeightedTournamentLeaderboardProvider? leaderboardProvider;
         private bool leaderboardLoaded;
+
+        // Active custom mod-multiplier rule (ModMult) and whether the score display
+        // should bind the weight-adjusted totals. Resolved on every provider rebuild;
+        // every match start rebuilds (teardown clears the roster), so no mid-lobby refresh needed.
+        private ModMultRule activeMultiplierRule = ModMultRule.Empty;
+        private bool customMultiplierActive;
 
         private SkinnableSound breakSound = null!;
         private Bindable<bool> alwaysPlayFirstBreak = null!;
@@ -153,6 +182,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         /// Snapshot of the playlist item being spectated, taken when spectating starts.
         /// </summary>
         public MultiplayerPlaylistItem? SpectatedItem { get; private set; }
+
+        /// <summary>
+        /// Read-only access to clocks for external consumers (e.g., WebSocket server).
+        /// </summary>
+        public IReadOnlyDictionary<int, SpectatorPlayerClock> ClocksByUser => clocksByUser;
+
+        /// <summary>
+        /// Current spectate master clock time in milliseconds, when a master exists.
+        /// Used by the WebSocket server for tosu-compatible playback position.
+        /// </summary>
+        public double? MasterClockTime => masterClock?.CurrentTime;
+
+        /// <summary>
+        /// Read-only access to the leaderboard provider for external consumers.
+        /// </summary>
+        public WeightedTournamentLeaderboardProvider? LeaderboardProvider => leaderboardProvider;
+
+        /// <summary>
+        /// Read-only access to scores for external consumers.
+        /// </summary>
+        public IReadOnlyDictionary<int, Score> ScoresByUser => scoresByUser;
+
+        /// <summary>
+        /// Read-only access to red team cells.
+        /// </summary>
+        public IReadOnlyList<SpectateCell>? RedCells => redCells;
+
+        /// <summary>
+        /// Read-only access to blue team cells.
+        /// </summary>
+        public IReadOnlyList<SpectateCell>? BlueCells => blueCells;
 
         private void updateSpectatedScore()
             => SpectatedScore.Value = scoresByUser.Values.FirstOrDefault();
@@ -204,6 +264,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             beatmapAvailabilityTracker.Availability.BindValueChanged(onBeatmapAvailabilityChanged, true);
 
+            teamNameColourRed = ladder.TeamNameColourRed.GetBoundCopy();
+            teamNameColourBlue = ladder.TeamNameColourBlue.GetBoundCopy();
+            teamNameColourRed.BindValueChanged(_ => refreshTeamNameColours());
+            teamNameColourBlue.BindValueChanged(_ => refreshTeamNameColours());
+
             // Filtered to inserted sets, matching SpectatorScreen.beatmapsChanged.
             realmSubscription = realm.RegisterForNotifications<BeatmapSetInfo>(
                 r => r.All<BeatmapSetInfo>().Where(s => !s.DeletePending),
@@ -239,6 +304,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         /// <summary>
         /// Recomputes slot assignment, labels, watches and score provider.
+        /// Cells still showing gameplay (results or last frames) stay pinned to their owner.
         /// No-op while frozen unless <paramref name="force"/> is set (new match, mid-match join, reset).
         /// </summary>
         public void Assign(bool force = false)
@@ -280,8 +346,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     clockItemId = itemId;
             }
 
-            var redIds = assignSide(room, redCells, 0);
-            var blueIds = assignSide(room, blueCells, 1);
+            // Cells still showing gameplay (results or last frames) keep their owner and label;
+            // fresh picks exclude those owners so nobody is shown twice.
+            var reservedIds = redCells.Concat(blueCells)
+                                      .Where(c => c.HasPlay && c.AssignedUserId != null)
+                                      .Select(c => c.AssignedUserId!.Value)
+                                      .ToHashSet();
+
+            var redIds = assignSide(room, redCells, 0, reservedIds);
+            var blueIds = assignSide(room, blueCells, 1, reservedIds);
 
             cellsByUser.Clear();
 
@@ -297,7 +370,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     cellsByUser[blueIds[i]!.Value] = blueCells[i];
             }
 
-            var assignedIds = redIds.Concat(blueIds).Where(id => id != null).Select(id => id!.Value).ToList();
+            // Retained owners who left the room keep their label but stop being watched.
+            var roomUserIds = room.Users.Select(u => u.UserID).ToHashSet();
+            var assignedIds = redIds.Concat(blueIds).Where(id => id != null).Select(id => id!.Value).Where(roomUserIds.Contains).ToList();
 
             syncWatches(assignedIds);
             recreateScoreProvider(room, assignedIds);
@@ -319,13 +394,51 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         /// <summary>
-        /// Assigns users to one side's cells. Returns the assigned user ID per cell (null for idle slots).
+        /// Reapplies the configured team name colours to cells that already show a player.
+        /// Colours are stored as plain strings, so a value change would otherwise only be
+        /// visible after the next room update.
         /// </summary>
-        private List<int?> assignSide(MultiplayerRoom room, IReadOnlyList<SpectateCell> cells, int sideIndex)
+        private void refreshTeamNameColours()
+        {
+            var room = multiplayerClient.Room;
+
+            if (room == null || redCells == null || blueCells == null)
+                return;
+
+            // Match assignSide(): side colours are only used for team rooms or slot-based rooms.
+            bool usesSideColours = room.MatchState is TeamVersusRoomState
+                                   || (room.MatchState is StandardMatchRoomState standard && standard.Slots?.Any(id => id != null) == true);
+
+            if (!usesSideColours)
+                return;
+
+            var red = TournamentColours.GetTeamNameColour(TeamColour.Red, ladder);
+            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
+
+            foreach (var cell in redCells)
+            {
+                if (cell.AssignedUserId != null)
+                    cell.UpdateUsernameColour(red);
+            }
+
+            foreach (var cell in blueCells)
+            {
+                if (cell.AssignedUserId != null)
+                    cell.UpdateUsernameColour(blue);
+            }
+        }
+
+        /// <summary>
+        /// Assigns users to one side's cells. Returns the assigned user ID per cell (null for idle slots).
+        /// Cells still showing gameplay (results or last frames) are pinned to their owner:
+        /// their label is never rewritten here, and <paramref name="reservedIds"/> (those owners)
+        /// are excluded from fresh picks so nobody is shown twice.
+        /// </summary>
+        private List<int?> assignSide(MultiplayerRoom room, IReadOnlyList<SpectateCell> cells, int sideIndex, HashSet<int> reservedIds)
         {
             var result = new List<int?>();
-            var red = TournamentColours.GetTeamNameColour(TeamColour.Red);
-            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue);
+            var red = TournamentColours.GetTeamNameColour(TeamColour.Red, ladder);
+            var blue = TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
 
             if (room.MatchState is StandardMatchRoomState matchState && matchState.Slots?.Any(id => id != null) == true)
             {
@@ -333,14 +446,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 // non-playing occupants keep idle backgrounds.
                 int n = cells.Count;
 
+                var queue = new Queue<MultiplayerRoomUser>();
+
                 for (int i = 0; i < n; i++)
                 {
                     int slotIndex = sideIndex * n + i;
                     int? userId = slotIndex < matchState.Slots.Length ? matchState.Slots[slotIndex] : null;
                     var user = userId == null ? null : room.Users.SingleOrDefault(u => u.UserID == userId);
 
-                    result.Add(user?.UserID);
-                    cells[i].Assign(user?.User?.Username, sideIndex == 0 ? red : blue);
+                    if (user != null && !reservedIds.Contains(user.UserID))
+                        queue.Enqueue(user);
+                }
+
+                for (int i = 0; i < n; i++)
+                {
+                    if (cells[i].HasPlay)
+                    {
+                        result.Add(cells[i].AssignedUserId);
+                        continue;
+                    }
+
+                    if (queue.Count > 0)
+                    {
+                        var user = queue.Dequeue();
+                        result.Add(user.UserID);
+                        cells[i].Assign(user.User?.Username, sideIndex == 0 ? red : blue, user.UserID);
+                    }
+                    else
+                    {
+                        result.Add(null);
+                        cells[i].Assign(null, Color4.White);
+                    }
                 }
 
                 return result;
@@ -351,7 +487,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // Only playable users (not referee/spectating/missing the map) take cells.
             // Anything else leaves its slots on the idle background. Re-evaluated on every
             // Assign, so pre-match downloads or state changes pick users up before the match starts.
-            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable);
+            IEnumerable<MultiplayerRoomUser> candidates = room.Users.Where(isPlayable).Where(u => !reservedIds.Contains(u.UserID));
 
             if (teamMode)
             {
@@ -364,19 +500,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 candidates = candidates.Skip(redCells!.Count);
             }
 
-            var picked = candidates.Take(cells.Count).ToList();
+            var picked = new Queue<MultiplayerRoomUser>(candidates.Take(cells.Count));
 
             for (int i = 0; i < cells.Count; i++)
             {
-                if (i < picked.Count)
+                if (cells[i].HasPlay)
                 {
-                    var user = picked[i];
+                    result.Add(cells[i].AssignedUserId);
+                    continue;
+                }
+
+                if (picked.Count > 0)
+                {
+                    var user = picked.Dequeue();
                     Color4 colour = teamMode
                         ? (sideIndex == 0 ? red : blue)
                         : Color4.White;
 
                     result.Add(user.UserID);
-                    cells[i].Assign(user.User?.Username, colour);
+                    cells[i].Assign(user.User?.Username, colour, user.UserID);
                 }
                 else
                 {
@@ -400,6 +542,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         /// </summary>
         public void ResetSpectate()
         {
+            // Back to room-following first so globals snap to the live item;
+            // Assign below re-enters spectating right away when still playing.
+            musicController.ExitSpectatingToRoom();
             teardownVisuals();
             stopAllWatches();
 
@@ -411,6 +556,44 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 multiplayerClient.ChangeState(MultiplayerUserState.Spectating).FireAndForget();
 
             Assign(force: true);
+        }
+
+        /// <summary>
+        /// Resets a single player's spectate state. Only works while the user is actively Playing.
+        /// Other players are completely unaffected — master clock, audio, leaderboard keep running.
+        /// If the player has already disconnected (Passed/Failed/Quit/not in room), this is a no-op
+        /// and their last frame is retained.
+        /// </summary>
+        public void ResetPlayer(int userId)
+        {
+            // Must be currently watched
+            if (!watchedUsers.Contains(userId))
+                return;
+
+            // Must be in Playing state; if already disconnected, keep last frame and do nothing
+            if (!spectatorClient.WatchedUserStates.TryGetValue(userId, out var state)
+                || state.State != SpectatedUserState.Playing)
+                return;
+
+            // Must have an assigned cell with active gameplay
+            if (!cellsByUser.TryGetValue(userId, out var cell) || !cell.HasPlay)
+                return;
+
+            // Tear down THIS player only
+            stopWatching(userId);
+            removeClock(userId);
+            cell.ClearPlay();
+            scoresByUser.Remove(userId);
+            // NOTE: keep modsByUser[userId] — mods are locked at match start, reuse for weight
+
+            // Mark this user so the upcoming startGameplay suppresses PlayerLoader's
+            // entrance blur/fade/stop side effects (master track is already live).
+            suppressAudioForUsers.Add(userId);
+
+            // Re-start watching → onUserStateChanged → startGameplay (scheduled)
+            // startGameplay will create fresh Score+Replay, new clock seeking to live master time,
+            // attach new TournamentPlayerArea to the SAME cell, and re-add clock to leaderboardProvider.
+            startWatching(userId);
         }
 
         #endregion
@@ -504,16 +687,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 return;
 
             // A new match clears previous results/last frames (kept until now).
+            // Exit to room-following first so globals snap to the new item,
+            // then Assign re-enters spectating and freezes onto it.
+            musicController.ExitSpectatingToRoom();
             teardownVisuals();
-            musicController.MusicControlSuspended.Value = true;
             Assign(force: true);
         });
 
+        /// <summary>
+        /// Tries to enter the spectating freeze when a match is underway.
+        /// Never exits it: results, aborts and lobby returns keep showing the
+        /// spectated item until reset or the next <c>LoadRequested</c>.
+        /// </summary>
         private void updateMusicSuspend()
         {
             var room = multiplayerClient.Room;
 
-            musicController.MusicControlSuspended.Value = room is { State: MultiplayerRoomState.WaitingForLoad or MultiplayerRoomState.Playing };
+            if (room is { State: MultiplayerRoomState.WaitingForLoad or MultiplayerRoomState.Playing })
+                musicController.EnterSpectating();
         }
 
         #endregion
@@ -740,8 +931,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             };
 
             scoresByUser[userId] = score;
+            modsByUser[userId] = score.ScoreInfo.Mods;
             SpectatedItem ??= multiplayerClient.Room?.CurrentPlaylistItem.Clone();
             updateSpectatedScore();
+
+            // The snapshot above may be newer than what the provider weights with;
+            // recompute immediately so totals pick it up even before scores move.
+            leaderboardProvider?.RefreshWeights();
 
             // Captured so the deferred attachment below can detect a clock generation
             // change in between (teardown, master rebuild, new match). Attachments from
@@ -783,14 +979,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (syncManager.CurrentMasterTime > 0)
                     clock.Seek(syncManager.CurrentMasterTime);
 
-                var area = new TournamentPlayerArea(userId, clock);
+                var area = new TournamentPlayerArea(userId, clock)
+                {
+                    // Per-player custom multiplier for the cell HUD and results, evaluated once:
+                    // mods are locked once the match starts so one weight lasts the whole play.
+                    // Inactive rules evaluate to 1, which disables the adjustment entirely.
+                    ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods)
+                };
 
                 clocksByUser[userId] = clock;
                 cell.AttachPlayArea(area);
 
-                // Pushes the inner MultiSpectatorPlayerLoader -> MultiSpectatorPlayer.
-                // Without this the area stays on its loading spinner forever.
-                area.LoadScore(playScore);
+                // Re-assign the cell's label so the username stays visible across resets.
+                // The userMap is populated from room users in startGameplay's guard chain.
+                if (userMap.TryGetValue(userId, out var apiUser))
+                {
+                    var roomUser = multiplayerClient.Room?.Users.FirstOrDefault(u => u.UserID == userId);
+                    Color4 teamColour;
+                    if (roomUser?.MatchState is osu.Game.Online.Multiplayer.MatchTypes.TeamVersus.TeamVersusUserState tvs)
+                        teamColour = tvs.TeamID == 0 ? TournamentColours.GetTeamNameColour(TeamColour.Red, ladder) : TournamentColours.GetTeamNameColour(TeamColour.Blue, ladder);
+                    else
+                        teamColour = Color4.White;
+                    cell.Assign(apiUser.Username, teamColour, userId);
+                }
+
+                // Single-player reset (via ResetPlayer) sets this flag so the loader
+                // skips muting/stopping the shared master track. Normal start / full reset
+                // do not set it, preserving the official entrance blur/fade behaviour.
+                bool suppressAudioEffects = suppressAudioForUsers.Remove(userId);
+
+                // Pushes the inner loader -> player.
+                area.LoadScore(playScore, suppressAudioEffects);
 
                 if (leaderboardLoaded && leaderboardProvider != null)
                 {
@@ -843,6 +1062,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (spectatorClient.WatchedUserStates.TryGetValue(userId, out SpectatorState state) && state.State == SpectatedUserState.Playing)
                     startGameplay(userId, state);
             }
+
+            // Download finished mid-match while in room-following silence: freeze onto the item now.
+            updateMusicSuspend();
         }
 
         private void onBeatmapAvailabilityChanged(ValueChangedEvent<BeatmapAvailability> e)
@@ -918,11 +1140,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 masterClock = null;
             }
 
-            if (syncManager != null)
-            {
-                syncManager.Expire();
-                syncManager = null;
-            }
+            syncManager?.Expire();
+            syncManager = null;
 
             clockGeneration++;
 
@@ -1120,7 +1339,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             var users = room.Users.Where(u => assignedSet.Contains(u.UserID)).ToArray();
 
             int generation = clockGeneration;
-            var provider = new TournamentLeaderboardProvider(users);
+            var provider = new WeightedTournamentLeaderboardProvider(users);
+
+            resolveActiveMultiplierRule();
+            provider.WeightFunction = evaluateWeightFor;
 
             LoadComponentAsync(leaderboardProvider = provider, loaded =>
             {
@@ -1131,25 +1353,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     return;
                 }
 
-                AddInternal(loaded);
-                leaderboardLoaded = true;
-
-                foreach (var (userId, clock) in clocksByUser)
+                // Note: this callback runs after dependency load, but LoadComplete (which builds
+                // AdjustedTeamScores) only fires on the next update frame after AddInternal below.
+                // Everything requiring loaded state is therefore deferred to OnFirstLoad.
+                provider.OnFirstLoad = firstLoaded =>
                 {
-                    try
-                    {
-                        loaded.AddClock(userId, clock);
-                    }
-                    catch (ArgumentException)
-                    {
-                        // Clock for a user outside the provider's roster (reassigned since).
-                    }
-                }
+                    // Re-check: a teardown or rebuild may have landed in the gap before LoadComplete.
+                    // (Already added to the tree by the callback below; only finish the wiring here.)
+                    if (generation != clockGeneration || !ReferenceEquals(leaderboardProvider, firstLoaded))
+                        return;
 
-                foreach (int userId in watchedUsers)
-                    subscribeComboBreak(userId);
+                    leaderboardLoaded = true;
 
-                updateScoreBindings();
+                    foreach (var (userId, clock) in clocksByUser)
+                    {
+                        try
+                        {
+                            firstLoaded.AddClock(userId, clock);
+                        }
+                        catch (ArgumentException)
+                        {
+                            // Clock for a user outside the provider's roster (reassigned since).
+                        }
+                    }
+
+                    foreach (int userId in watchedUsers)
+                        subscribeComboBreak(userId);
+
+                    updateScoreBindings();
+                };
+
+                AddInternal(loaded);
             });
         }
 
@@ -1197,10 +1431,70 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // Rebinding an already-bound bindable throws, and the provider instance is replaced
             // on every rebuild (reset, new match). Unbind first so switching providers is safe.
             // UnbindBindings only removes BindTo links; display ValueChanged handlers are kept.
+            // With a custom rule active, bind the weight-adjusted totals instead of the raw ones.
+            // Binds only run on loaded providers (see OnFirstLoad), where both dictionaries are complete.
+            var totals = customMultiplierActive
+                ? leaderboardProvider!.AdjustedTeamScores
+                : leaderboardProvider!.TeamScores;
+
             ScoreDisplay.Team1Score.UnbindBindings();
             ScoreDisplay.Team2Score.UnbindBindings();
-            ScoreDisplay.Team1Score.BindTarget = leaderboardProvider!.TeamScores.First().Value;
-            ScoreDisplay.Team2Score.BindTarget = leaderboardProvider!.TeamScores.Last().Value;
+            ScoreDisplay.Team1Score.BindTarget = totals.First().Value;
+            ScoreDisplay.Team2Score.BindTarget = totals.Last().Value;
+        }
+
+        /// <summary>
+        /// Evaluates the active rule for a user, preferring the Playing-time snapshot taken in
+        /// <see cref="startGameplay"/> (same source as the cells) over the processor-side fallback.
+        /// Reads the live rule so no lambda replacement is needed on rule swaps.
+        /// </summary>
+        private double evaluateWeightFor(int userId, IReadOnlyList<Mod> fallbackMods)
+            => activeMultiplierRule.Evaluate(modsByUser.TryGetValue(userId, out var mods) ? mods : fallbackMods);
+
+        /// <summary>
+        /// Resolves the effective ModMult rule for the room's current playlist item:
+        /// the matching round beatmap's rule when non-empty, otherwise the round default.
+        /// </summary>
+        private void resolveActiveMultiplierRule()
+        {
+            customMultiplierActive = false;
+            activeMultiplierRule = ModMultRule.Empty;
+
+            try
+            {
+                var room = multiplayerClient.Room;
+                var round = ladder.CurrentMatch.Value?.Round.Value;
+
+                if (room == null || round == null)
+                    return;
+
+                var item = room.Playlist.FirstOrDefault(i => i.ID == room.Settings.PlaylistItemId);
+                int? rulesetId = ladder.Ruleset.Value?.OnlineID;
+
+                RoundBeatmap? map = item == null
+                    ? null
+                    : round.Beatmaps.FirstOrDefault(b => RoundBeatmap.Matches(item, b, rulesetId));
+
+                string source = ModMultRule.ResolveSource(map?.ModMultiplierRule, round.DefaultModMultiplierRule.Value);
+
+                if (string.IsNullOrWhiteSpace(source))
+                    return;
+
+                if (!ModMultRule.TryParse(source, out var rule, out string? error) || rule == null)
+                {
+                    Logger.Log($"Invalid custom mod multiplier rule, ignoring: {error}", LoggingTarget.Runtime, LogLevel.Debug);
+                    return;
+                }
+
+                activeMultiplierRule = rule;
+                customMultiplierActive = true;
+
+                Logger.Log($"Custom mod multiplier active (playlist item {item?.ID.ToString() ?? "none"}): {source}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to resolve custom mod multiplier rule: {ex.Message}", LoggingTarget.Runtime, LogLevel.Debug);
+            }
         }
 
         #endregion
@@ -1218,6 +1512,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             cellsByUser.Clear();
             clocksByUser.Clear();
             scoresByUser.Clear();
+            modsByUser.Clear();
             SpectatedItem = null;
             updateSpectatedScore();
             userMap.Clear();
@@ -1253,6 +1548,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             comboSubscribed.Clear();
             providerUserIds.Clear();
 
+            customMultiplierActive = false;
+            activeMultiplierRule = ModMultRule.Empty;
+
             // Release the score display so it never points at an expired provider,
             // and the next bind starts clean.
             ScoreDisplay?.Team1Score.UnbindBindings();
@@ -1265,7 +1563,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         {
             teardownVisuals();
             stopAllWatches();
-            updateMusicSuspend();
+
+            // Room left while following or spectating: keep the current beatmap playing (idle spec).
+            // Showcase playback (InShowcase) is untouched here.
+            if (musicController.State.Value is TournamentMusicState.InRoom or TournamentMusicState.Spectating)
+                musicController.EnterIdle();
         }
 
         protected override void Dispose(bool isDisposing)
@@ -1283,29 +1585,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             // Matches SpectatorScreen.Dispose: stop every watch.
             fullTeardown();
-        }
-
-        /// <summary>
-        /// Leaderboard provider with combo-break observability for tournament spectating.
-        /// </summary>
-        private partial class TournamentLeaderboardProvider : MultiSpectatorLeaderboardProvider
-        {
-            public TournamentLeaderboardProvider(MultiplayerRoomUser[] users)
-                : base(users)
-            {
-            }
-
-            public bool TryGetCombo(int userId, out BindableInt? combo)
-            {
-                if (UserScores.TryGetValue(userId, out TrackedUserData data))
-                {
-                    combo = data.ScoreProcessor.Combo;
-                    return true;
-                }
-
-                combo = null;
-                return false;
-            }
         }
 
         #endregion

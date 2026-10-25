@@ -7,33 +7,36 @@ using System.Drawing;
 using System.Linq;
 using osu.Framework;
 using osu.Framework.Allocation;
+using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Configuration;
+using osu.Framework.Extensions.LocalisationExtensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Cursor;
 using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
-using osu.Framework.Threading;
+using osu.Framework.Localisation;
+using osu.Framework.Platform;
 using osu.Game.Configuration;
+using osu.Game.Database;
 using osu.Game.Graphics;
 using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Localisation;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Online.Multiplayer;
 using osu.Game.Overlays;
-using osu.Game.Overlays.Dialog;
 using osu.Game.Overlays.Settings;
+using osu.Game.Resources.Localisation.Web;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
-using osu.Game.Rulesets.Mania.Configuration;
-using osu.Game.Rulesets.Mania.UI;
-using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
-using osu.Game.Rulesets.Taiko.Configuration;
-using osu.Game.Rulesets.UI;
+using osu.Game.Skinning;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
@@ -42,10 +45,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
     {
         private FillFlowContainer fillFlow = null!;
 
-        private LoginOverlay? loginOverlay;
-
         [Resolved]
         private IAPIProvider api { get; set; } = null!;
+
+        [Resolved(canBeNull: true)]
+        private LoginOverlay? loginOverlay { get; set; }
 
         [Resolved]
         private RulesetStore rulesets { get; set; } = null!;
@@ -66,19 +70,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         private RefereeAuthController refereeAuth { get; set; } = null!;
 
         [Resolved]
-        private SaveChangesOverlay saveChanges { get; set; } = null!;
-
-        [Resolved]
-        private IDialogOverlay dialogOverlay { get; set; } = null!;
-
-        [Resolved]
         private OsuColour colours { get; set; } = null!;
 
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
 
         [Resolved]
+        private SkinManager skins { get; set; } = null!;
+
+        [Resolved]
+        private AudioManager audio { get; set; } = null!;
+
+        [Resolved]
         private VisualAudioSettingsController visualAudioSettings { get; set; } = null!;
+
+        [Resolved]
+        private Clipboard? clipboard { get; set; }
 
         [Resolved]
         private FrameworkConfigManager frameworkConfig { get; set; } = null!;
@@ -91,39 +98,81 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// </summary>
         private readonly BindableBool quitArmed = new();
 
+        private ActionableInfo? quitButton;
+
+        /// <summary>
+        /// Mirrors <c>SkinInfo.RANDOM_SKIN</c>, which is internal to osu.Game.
+        /// </summary>
+        private static readonly Guid random_skin_id = new Guid("D39DFEFB-477C-4372-B1EA-2BCEA5FB8908");
+
         [BackgroundDependencyLoader]
         private void load()
         {
             InternalChildren = new Drawable[]
             {
-                new Box
+                new PopoverContainer
                 {
                     RelativeSizeAxes = Axes.Both,
-                    Colour = ColourProvider.Background5,
-                },
-                new OsuScrollContainer
-                {
-                    RelativeSizeAxes = Axes.Both,
-                    Child = fillFlow = new FillFlowContainer
+                    Children = new Drawable[]
                     {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        Padding = new MarginPadding(10),
-                        Spacing = new Vector2(10),
+                        new Box
+                        {
+                            RelativeSizeAxes = Axes.Both,
+                            Colour = ColourProvider.Background5,
+                        },
+                        new OsuScrollContainer
+                        {
+                            RelativeSizeAxes = Axes.Both,
+                            Child = fillFlow = new FillFlowContainer
+                            {
+                                RelativeSizeAxes = Axes.X,
+                                AutoSizeAxes = Axes.Y,
+                                Direction = FillDirection.Vertical,
+                                Padding = new MarginPadding(10),
+                                Spacing = new Vector2(10),
+                            },
+                        },
                     },
                 },
             };
 
             localUser.BindTo(api.LocalUser);
             localUser.BindValueChanged(_ => Schedule(reload));
+
+            quitArmed.BindValueChanged(e =>
+            {
+                quitButton?.ButtonText = e.NewValue ? "Click again to quit" : "Quit";
+            });
+
             reload();
         }
 
         protected override void LoadComplete()
         {
             base.LoadComplete();
+
+            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateConnectionRow();
+            }));
+
+            refereeAuth.HasValidToken.BindValueChanged(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateTokenRow();
+            }));
+
             onlineState.RoomJoined.BindValueChanged(_ => Schedule(reload), true);
+
+            refereeAuth.RefreshStatusAsync().ContinueWith(_ => Schedule(() =>
+            {
+                if (!IsDisposed)
+                {
+                    updateTokenRow();
+                    updateConnectionRow();
+                }
+            }));
         }
 
         public override void Hide()
@@ -131,24 +180,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             base.Hide();
 
             // Leaving this screen cancels a pending quit confirmation.
-            if (quitArmed.Value)
-            {
-                quitArmed.Value = false;
-
-                if (IsLoaded)
-                    Schedule(reload);
-            }
+            quitArmed.Value = false;
         }
 
         private void reload()
         {
             bool inRoom = onlineState.RoomJoined.Value;
-
-            var left = new List<Drawable>(coreSettingsSection(inRoom));
-            left.AddRange(refereeApiSection());
-
-            var right = new List<Drawable>(visualAudioSettingsSection());
-            right.AddRange(rulesetSettingsSection());
 
             fillFlow.Children = new Drawable[]
             {
@@ -169,15 +206,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                     {
                         new Drawable[]
                         {
-                            columnFlow(left),
-                            columnFlow(right),
+                            columnFlow(new Drawable[]
+                            {
+                                coreSettingsSection(inRoom),
+                                refereeApiSection(),
+                                webSocketSection(),
+                                notificationSettingsSection(),
+                                rulesetSettingsSection(),
+                            }),
+                            columnFlow(new Drawable[]
+                            {
+                                visualAudioSettingsSection(),
+                            }),
                         },
                     },
                 },
             };
         }
 
-        private static FillFlowContainer columnFlow(List<Drawable> children) => new FillFlowContainer
+        private static FillFlowContainer columnFlow(Drawable[] children) => new FillFlowContainer
         {
             RelativeSizeAxes = Axes.X,
             AutoSizeAxes = Axes.Y,
@@ -190,296 +237,230 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// <summary>
         /// Builds the core tournament setup section, including the quit button.
         /// </summary>
-        private IEnumerable<Drawable> coreSettingsSection(bool inRoom)
+        private Drawable coreSettingsSection(bool inRoom)
         {
-            yield return new OsuSpriteText
-            {
-                Text = "General settings",
-                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
-            };
-
-            yield return new ActionableInfo
-            {
-                Label = "Current user",
-                ButtonText = "Change sign-in",
-                Action = () =>
-                {
-                    api.Logout();
-
-                    if (loginOverlay == null)
-                    {
-                        AddInternal(loginOverlay = new LoginOverlay
-                        {
-                            Anchor = Anchor.TopRight,
-                            Origin = Anchor.TopRight,
-                        });
-                    }
-
-                    loginOverlay.State.Value = Visibility.Visible;
-                },
-                Value = api.LocalUser.Value.Username,
-                Failing = api.IsLoggedIn != true,
-                Description = "In order to access the API and display metadata, signing in is required."
-            };
-            yield return new TournamentSwitcher
-            {
-                Label = "",
-                Description = "Current tournament. This requires a restart to apply changes.",
-            };
-            yield return new LabelledDropdown<RulesetInfo?>(padded: true)
-            {
-                Label = "Ruleset",
-                Description = "Decides what stats are displayed and which ranks are retrieved for players. Only rulesets available online (usable in multiplayer rooms) are listed. This requires a restart to reload data for an existing bracket.",
-                // OnlineID < 0 means local-only (e.g. custom rulesets): the server cannot resolve them in multiplayer rooms.
-                // This intentionally does not hardcode the official rulesets, so private servers with more rulesets keep working.
-                Items = rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0),
-                Current = LadderInfo.Ruleset,
-                DropdownWidth = 0.5f,
-            };
-            yield return new ResolutionSelector
-            {
-                Label = "Window height",
-                ButtonText = "Apply",
-                Action = applyResolution,
-                Description = "Sets the window height and the minimum required width for the tournament layout."
-            };
-            yield return new ActionableInfo
-            {
-                Label = "Multiplayer room",
-                ButtonText = inRoom ? "Manage" : "Select room",
-                Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
-                Value = inRoom ? onlineState.RoomName.Value : "Not joined",
-                Failing = !inRoom,
-                Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
-            };
-            yield return new LabelledSwitchButton
-            {
-                Label = "Auto advance screens",
-                Description = "Screens will progress automatically from gameplay -> results -> map pool",
-                Current = LadderInfo.AutoProgressScreens,
-            };
-            yield return new LabelledSwitchButton
-            {
-                Label = "Display team seeds",
-                Description = "Team seeds will display alongside each team at the top in gameplay/map pool screens.",
-                Current = LadderInfo.DisplayTeamSeeds,
-            };
-            yield return new LabelledSwitchButton
-            {
-                Label = "Automatically download missing beatmaps",
-                Description = "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms.",
-                Current = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
-            };
-
-            const string quit_text = "Quit";
-            const string quit_confirmation_text = "Click again to quit";
-
-            var quitButton = new ActionableInfo
+            quitButton = new ActionableInfo
             {
                 Label = "Quit lazer!tourney",
-                ButtonText = quit_text,
+                ButtonText = quitArmed.Value ? "Click again to quit" : "Quit",
                 ButtonColour = colours.Red3,
                 Action = onQuitPressed,
             };
-            yield return quitButton;
 
-            quitArmed.BindValueChanged(e =>
+            return new SetupSection("General settings", prominent: true)
             {
-                if (!e.OldValue)
-                    quitButton?.ButtonText = quit_confirmation_text;
-                else
-                    quitButton?.ButtonText = quit_text;
-            });
+                Children = new Drawable[]
+                {
+                    new ActionableInfo
+                    {
+                        Label = "Current user",
+                        ButtonText = "Change sign-in",
+                        Action = () => loginOverlay?.Show(),
+                        Value = api.LocalUser.Value.Username,
+                        Failing = api.IsLoggedIn != true,
+                        Description = "In order to access the API and display metadata, signing in is required."
+                    },
+                    new TournamentSwitcher(),
+                    dropdown(
+                        "Ruleset",
+                        LadderInfo.Ruleset,
+                        // OnlineID < 0 means local-only (e.g. custom rulesets): the server cannot resolve them in multiplayer rooms.
+                        // This intentionally does not hardcode the official rulesets, so private servers with more rulesets keep working.
+                        rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0).Select(r => (RulesetInfo?)r),
+                        "Decides what stats are displayed and which ranks are retrieved for players. Only rulesets available online (usable in multiplayer rooms) are listed. This requires a restart to reload data for an existing bracket.",
+                        showRevertToDefaultButton: false),
+                    new ResolutionSelector
+                    {
+                        Action = applyResolution,
+                    },
+                    new ActionableInfo
+                    {
+                        Label = "Multiplayer room",
+                        ButtonText = inRoom ? "Manage" : "Select room",
+                        Action = () => sceneManager?.SetScreen(typeof(Room.RoomScreen)),
+                        Value = inRoom ? onlineState.RoomName.Value : "Not joined",
+                        Failing = !inRoom,
+                        Description = "Create or join a lazer multiplayer room as the data source. The local user stays spectating."
+                    },
+                    checkbox(
+                        "Auto advance screens",
+                        LadderInfo.AutoProgressScreens,
+                        "Screens will progress automatically from gameplay -> results -> map pool"),
+                    checkbox(
+                        "Display team seeds",
+                        LadderInfo.DisplayTeamSeeds,
+                        "Team seeds will display alongside each team at the top in gameplay/map pool screens."),
+                    checkbox(
+                        "Automatically download missing beatmaps",
+                        config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
+                        "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms."),
+                    quitButton,
+                },
+            };
         }
 
         /// <summary>
         /// Builds the Visual &amp; Audio settings section. Controls bind the lazer settings directly,
         /// so edits apply live; values are persisted to the bracket file on save.
+        /// The skin selector binds lazer's own skin setting and is deliberately not stored in the bracket file.
+        /// The result screen and default background styles are tournament-owned settings,
+        /// so they are not backed up/restored.
         /// </summary>
-        private IEnumerable<Drawable> visualAudioSettingsSection()
+        private Drawable visualAudioSettingsSection()
         {
-            yield return new OsuSpriteText
+            var inputSettings = new List<Drawable>
             {
-                Text = "Visual & Audio settings",
-                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
-            };
-
-            yield return sectionHeader("General");
-
-            yield return new LabelledDropdown<ScoringMode>(padded: true)
-            {
-                Label = "Score display mode",
-                Items = Enum.GetValues<ScoringMode>(),
-                Current = config.GetBindable<ScoringMode>(OsuSetting.ScoreDisplayMode),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Hit lighting",
-                Current = config.GetBindable<bool>(OsuSetting.HitLighting),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Star fountains",
-                Current = config.GetBindable<bool>(OsuSetting.StarFountains),
-            };
-
-            yield return sectionHeader("Audio");
-
-            yield return new SettingsSlider<float>
-            {
-                LabelText = "Positional hitsounds",
-                Current = config.GetBindable<float>(OsuSetting.PositionalHitsoundsLevel),
-                KeyboardStep = 0.01f,
-                DisplayAsPercentage = true,
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Always play first combo break",
-                Current = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak),
-            };
-
-            yield return sectionHeader("Background");
-
-            yield return new SettingsSlider<double>
-            {
-                LabelText = "Background dim",
-                Current = config.GetBindable<double>(OsuSetting.DimLevel),
-                KeyboardStep = 0.01f,
-                DisplayAsPercentage = true,
-            };
-
-            yield return new SettingsSlider<double>
-            {
-                LabelText = "Background blur",
-                Current = config.GetBindable<double>(OsuSetting.BlurLevel),
-                KeyboardStep = 0.01f,
-                DisplayAsPercentage = true,
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Lighten during breaks",
-                Current = config.GetBindable<bool>(OsuSetting.LightenDuringBreaks),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Fade playfield when health low",
-                Current = config.GetBindable<bool>(OsuSetting.FadePlayfieldWhenHealthLow),
-            };
-
-            yield return sectionHeader("Beatmap");
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Beatmap skins",
-                Current = config.GetBindable<bool>(OsuSetting.BeatmapSkins),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Beatmap colours",
-                Current = config.GetBindable<bool>(OsuSetting.BeatmapColours),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Beatmap hitsounds",
-                Current = config.GetBindable<bool>(OsuSetting.BeatmapHitsounds),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Show storyboard",
-                Current = config.GetBindable<bool>(OsuSetting.ShowStoryboard),
-            };
-
-            yield return new SettingsSlider<float>
-            {
-                LabelText = "Combo colour normalisation",
-                Current = config.GetBindable<float>(OsuSetting.ComboColourNormalisationAmount),
-                KeyboardStep = 0.01f,
-                DisplayAsPercentage = true,
-            };
-
-            yield return sectionHeader("HUD");
-
-            yield return new LabelledDropdown<HUDVisibilityMode>(padded: true)
-            {
-                Label = "HUD visibility mode",
-                Items = Enum.GetValues<HUDVisibilityMode>(),
-                Current = config.GetBindable<HUDVisibilityMode>(OsuSetting.HUDVisibilityMode),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Show replay settings overlay",
-                Current = config.GetBindable<bool>(OsuSetting.ReplaySettingsOverlay),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Always show key overlay",
-                Current = config.GetBindable<bool>(OsuSetting.KeyOverlay),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Always show gameplay leaderboard",
-                Current = config.GetBindable<bool>(OsuSetting.GameplayLeaderboard),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Show health display when can't fail",
-                Current = config.GetBindable<bool>(OsuSetting.ShowHealthDisplayWhenCantFail),
-            };
-
-            yield return sectionHeader("Input");
-
-            yield return new SettingsSlider<float>
-            {
-                LabelText = "Gameplay cursor size",
-                Current = config.GetBindable<float>(OsuSetting.GameplayCursorSize),
-                KeyboardStep = 0.01f,
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Auto cursor size",
-                Current = config.GetBindable<bool>(OsuSetting.AutoCursorSize),
-            };
-
-            yield return new LabelledSwitchButton
-            {
-                Label = "Gameplay cursor during touch",
-                Current = config.GetBindable<bool>(OsuSetting.GameplayCursorDuringTouch),
+                slider(
+                    "Gameplay cursor size",
+                    config.GetBindable<float>(OsuSetting.GameplayCursorSize),
+                    displayAsPercentage: false),
+                checkbox(
+                    "Auto cursor size",
+                    config.GetBindable<bool>(OsuSetting.AutoCursorSize)),
+                checkbox(
+                    "Gameplay cursor during touch",
+                    config.GetBindable<bool>(OsuSetting.GameplayCursorDuringTouch)),
             };
 
             if (RuntimeInfo.OS == RuntimeInfo.Platform.Windows)
             {
-                yield return new LabelledSwitchButton
-                {
-                    Label = "Disable Windows key during gameplay",
-                    Current = config.GetBindable<bool>(OsuSetting.GameplayDisableWinKey),
-                };
+                inputSettings.Add(checkbox(
+                    "Disable Windows key during gameplay",
+                    config.GetBindable<bool>(OsuSetting.GameplayDisableWinKey)));
             }
 
-            yield return sectionHeader("Mods");
-
-            yield return new LabelledSwitchButton
+            var skinDropdown = new SkinDropdown
             {
-                Label = "Increase first object visibility",
-                Current = config.GetBindable<bool>(OsuSetting.IncreaseFirstObjectVisibility),
+                AlwaysShowSearchBar = true,
+                AllowNonContiguousMatching = true,
+                Caption = SkinSettingsStrings.CurrentSkin,
+                Items = skins.GetAllUsableSkins(),
+                Current = skins.CurrentSkinInfo,
             };
 
-            static OsuSpriteText sectionHeader(string text) => new OsuSpriteText
+            // Mirror the official skin settings: "Random Skin" is a placeholder that immediately
+            // selects a random real skin instead of becoming the current skin.
+            skinDropdown.Current.BindValueChanged(skin =>
             {
-                Text = text,
-                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 18),
+                if (skin.NewValue.ID != random_skin_id)
+                    return;
+
+                skins.CurrentSkinInfo.Value = skin.OldValue;
+                skins.SelectRandomSkin();
+            });
+
+            return new SetupSection("Visual & Audio settings", prominent: true)
+            {
+                Children = new Drawable[]
+                {
+                    new SettingsItemV2(skinDropdown),
+                    subSection("Tourney settings",
+                        enumDropdown(
+                            "Result screen",
+                            LadderInfo.ResultScreen,
+                            "Which result screen is shown after a play or replay finishes. Applies to spectated match cells and showcase replays."),
+                        new DefaultBackgroundSettings(),
+                        checkbox(
+                            "Show player usernames",
+                            LadderInfo.ShowPlayerUsernames,
+                            "Show each player's username in the bottom-right corner of gameplay cells.")),
+                    subSection("Team colors",
+                        colourPicker(
+                            "Red team background",
+                            LadderInfo.TeamColourRed,
+                            "Background colour used for red team headers, map pool buttons and pick/ban markers."),
+                        colourPicker(
+                            "Red team username",
+                            LadderInfo.TeamNameColourRed,
+                            "Username text colour for red team players."),
+                        colourPicker(
+                            "Blue team background",
+                            LadderInfo.TeamColourBlue,
+                            "Background colour used for blue team headers, map pool buttons and pick/ban markers."),
+                        colourPicker(
+                            "Blue team username",
+                            LadderInfo.TeamNameColourBlue,
+                            "Username text colour for blue team players.")),
+                    subSection("General",
+                        enumDropdown(
+                            "Score display mode",
+                            config.GetBindable<ScoringMode>(OsuSetting.ScoreDisplayMode)),
+                        checkbox(
+                            "Hit lighting",
+                            config.GetBindable<bool>(OsuSetting.HitLighting)),
+                        checkbox(
+                            "Star fountains",
+                            config.GetBindable<bool>(OsuSetting.StarFountains))),
+                    subSection("Audio",
+                        slider(
+                            "Master volume (window inactive)",
+                            config.GetBindable<double>(OsuSetting.VolumeInactive)),
+                        slider(
+                            "Music volume",
+                            audio.VolumeTrack),
+                        slider(
+                            "Effect volume",
+                            audio.VolumeSample),
+                        slider(
+                            "Hitsound volume",
+                            config.GetBindable<double>(OsuSetting.HitsoundVolume)),
+                        slider(
+                            "Positional hitsounds",
+                            config.GetBindable<float>(OsuSetting.PositionalHitsoundsLevel)),
+                        checkbox(
+                            "Always play first combo break",
+                            config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak))),
+                    subSection("Background",
+                        slider(
+                            "Background dim",
+                            config.GetBindable<double>(OsuSetting.DimLevel)),
+                        slider(
+                            "Background blur",
+                            config.GetBindable<double>(OsuSetting.BlurLevel)),
+                        checkbox(
+                            "Lighten during breaks",
+                            config.GetBindable<bool>(OsuSetting.LightenDuringBreaks)),
+                        checkbox(
+                            "Fade playfield when health low",
+                            config.GetBindable<bool>(OsuSetting.FadePlayfieldWhenHealthLow))),
+                    subSection("Beatmap",
+                        checkbox(
+                            "Beatmap skins",
+                            config.GetBindable<bool>(OsuSetting.BeatmapSkins)),
+                        checkbox(
+                            "Beatmap colours",
+                            config.GetBindable<bool>(OsuSetting.BeatmapColours)),
+                        checkbox(
+                            "Beatmap hitsounds",
+                            config.GetBindable<bool>(OsuSetting.BeatmapHitsounds)),
+                        checkbox(
+                            "Show storyboard",
+                            config.GetBindable<bool>(OsuSetting.ShowStoryboard)),
+                        slider(
+                            "Combo colour normalisation",
+                            config.GetBindable<float>(OsuSetting.ComboColourNormalisationAmount))),
+                    subSection("HUD",
+                        enumDropdown(
+                            "HUD visibility mode",
+                            config.GetBindable<HUDVisibilityMode>(OsuSetting.HUDVisibilityMode)),
+                        checkbox(
+                            "Show replay settings overlay",
+                            config.GetBindable<bool>(OsuSetting.ReplaySettingsOverlay)),
+                        checkbox(
+                            "Always show key overlay",
+                            config.GetBindable<bool>(OsuSetting.KeyOverlay)),
+                        checkbox(
+                            "Always show gameplay leaderboard",
+                            config.GetBindable<bool>(OsuSetting.GameplayLeaderboard)),
+                        checkbox(
+                            "Show health display when can't fail",
+                            config.GetBindable<bool>(OsuSetting.ShowHealthDisplayWhenCantFail))),
+                    subSection("Input", inputSettings.ToArray()),
+                    subSection("Mods",
+                        checkbox(
+                            "Increase first object visibility",
+                            config.GetBindable<bool>(OsuSetting.IncreaseFirstObjectVisibility))),
+                },
             };
         }
 
@@ -490,219 +471,295 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
         /// Controls bind the lazer settings directly, so edits apply live;
         /// values are persisted to the bracket file on save.
         /// </summary>
-        private IEnumerable<Drawable> rulesetSettingsSection()
+        private Drawable rulesetSettingsSection() => new SetupSection("Ruleset settings", prominent: true)
         {
-            yield return new OsuSpriteText
-            {
-                Text = "Ruleset settings",
-                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
-            };
-
-            foreach (var drawable in rulesetSettingsControls())
-                yield return drawable;
-        }
+            Children = rulesetSettingsControls().ToArray(),
+        };
 
         private IEnumerable<Drawable> rulesetSettingsControls()
         {
-            switch (LadderInfo.Ruleset.Value?.ShortName)
+            var settings = RulesetSettingDescriptors.ForShortName(LadderInfo.Ruleset.Value?.ShortName);
+
+            if (settings == null)
             {
-                case "osu" when visualAudioSettings.OsuRulesetConfig is { } config:
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Snaking in sliders",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Snaking out sliders",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Hit animations",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.HitAnimations),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Cursor trail",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Cursor ripples",
-                        Current = config.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples),
-                    };
-                    yield return new LabelledDropdown<PlayfieldBorderStyle>(padded: true)
-                    {
-                        Label = "Playfield border style",
-                        Items = Enum.GetValues<PlayfieldBorderStyle>(),
-                        Current = config.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle),
-                    };
-                    yield break;
-
-                case "taiko" when visualAudioSettings.TaikoRulesetConfig is { } config:
-                    yield return new LabelledDropdown<TaikoTouchControlScheme>(padded: true)
-                    {
-                        Label = "Touch control scheme",
-                        Items = Enum.GetValues<TaikoTouchControlScheme>(),
-                        Current = config.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Hit animations",
-                        Current = config.GetBindable<bool>(TaikoRulesetSetting.HitAnimations),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Rate-adjusted hit animations",
-                        Current = config.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation),
-                    };
-                    yield break;
-
-                case "mania" when visualAudioSettings.ManiaRulesetConfig is { } config:
-                    yield return new LabelledDropdown<ManiaScrollingDirection>(padded: true)
-                    {
-                        Label = "Scrolling direction",
-                        Items = Enum.GetValues<ManiaScrollingDirection>(),
-                        Current = config.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection),
-                    };
-                    yield return new SettingsSlider<double>
-                    {
-                        LabelText = "Scroll speed",
-                        Current = config.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed),
-                        KeyboardStep = 1,
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Timing-based note colouring",
-                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring),
-                    };
-                    yield return new LabelledSwitchButton
-                    {
-                        Label = "Touch overlay",
-                        Current = config.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay),
-                    };
-                    yield break;
+                yield return rulesetMessage("No configurable settings for this ruleset.");
+                yield break;
             }
 
-            yield return new OsuSpriteText
+            object? manager = visualAudioSettings.GetRulesetConfig(LadderInfo.Ruleset.Value?.ShortName ?? string.Empty);
+
+            if (manager == null)
             {
-                Text = "No configurable settings for this ruleset.",
-                Font = OsuFont.GetFont(size: 14),
-            };
+                yield return rulesetMessage("Ruleset settings are unavailable (official ruleset assemblies could not be loaded).");
+                yield break;
+            }
+
+            foreach (var setting in settings)
+            {
+                Drawable? control = buildRulesetSettingControl(manager, setting);
+
+                if (control != null)
+                    yield return control;
+            }
+        }
+
+        private static Drawable rulesetMessage(string text) => new OsuSpriteText
+        {
+            Text = text,
+            Font = OsuFont.GetFont(size: 14),
+            Padding = SettingsPanel.CONTENT_PADDING,
+        };
+
+        /// <summary>
+        /// Builds one control for a setting, or null when anything on the path is missing.
+        /// Enum dropdowns are constructed via reflection; no official ruleset type is named.
+        /// </summary>
+        private static Drawable? buildRulesetSettingControl(object manager, RulesetSettingDescriptor setting)
+        {
+            object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+
+            if (bindable == null)
+                return null;
+
+            switch (setting.Kind)
+            {
+                case RulesetSettingKind.Bool:
+                    return new SettingsItemV2(new FormCheckBox
+                    {
+                        Caption = setting.Label,
+                        Current = (Bindable<bool>)bindable,
+                    });
+
+                case RulesetSettingKind.Double:
+                    return new SettingsItemV2(new FormSliderBar<double>
+                    {
+                        Caption = setting.Label,
+                        Current = (Bindable<double>)bindable,
+                        KeyboardStep = setting.SliderStep,
+                    });
+
+                case RulesetSettingKind.Enum:
+                    return buildEnumDropdown(bindable, setting);
+
+                default:
+                    return null;
+            }
+        }
+
+        private static Drawable? buildEnumDropdown(object bindable, RulesetSettingDescriptor setting)
+        {
+            Type? enumType = bindable.GetType().GetGenericArguments().FirstOrDefault();
+
+            if (enumType == null || !enumType.IsEnum)
+                return null;
+
+            Type dropdownType;
+            object dropdown;
+
+            try
+            {
+                dropdownType = typeof(FormEnumDropdown<>).MakeGenericType(enumType);
+                dropdown = Activator.CreateInstance(dropdownType)!;
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+
+            dropdownType.GetProperty("Caption")?.SetValue(dropdown, new LocalisableString(setting.Label));
+            dropdownType.GetProperty("Current")?.SetValue(dropdown, bindable);
+
+            return new SettingsItemV2((IFormControl)dropdown);
         }
 
         /// <summary>
-        /// Builds the Referee hub API section. Client credentials live in the bracket file;
-        /// access tokens live per tournament in the shared ini file and are never shared.
+        /// Builds the Referee hub API section. Client credentials, access tokens and the
+        /// local callback port all live in the shared ini file, never in bracket data.
         /// </summary>
-        private IEnumerable<Drawable> refereeApiSection()
+        private Drawable refereeApiSection()
         {
-            var statusText = new OsuSpriteText
-            {
-                Font = OsuFont.GetFont(size: 18),
-                Text = refereeAuth.StatusText.Value,
-            };
-
-            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 18))
+            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 14))
             {
                 RelativeSizeAxes = Axes.X,
                 AutoSizeAxes = Axes.Y,
+                Padding = SettingsPanel.CONTENT_PADDING,
+                Colour = ColourProvider.Content2,
             };
 
             guide.AddText("Control multiplayer rooms through the referee hub API.\n\n");
             guide.AddText("1. Create an OAuth application at https://osu.ppy.sh/home/account/edit (Account settings, OAuth section). "); guide.AddArbitraryDrawable(new ExternalLinkButton("https://osu.ppy.sh/home/account/edit#new-oauth-application"));
-            guide.AddText($"\n\n2. Set its Application Callback URL to {RefereeAuthController.CallbackUrl} (Copy callback URL button below).\n\n");
+            guide.AddText("\n\n2. Set its Application Callback URL to the callback URL shown below (Copy URL button).\n\n");
             guide.AddText("3. Enter the Client ID and Client Secret below.\n\n");
             guide.AddText("4. Press Authorise and approve in the browser.\n\n");
             guide.AddText("Note: unless the application is owned by a bot account, only its owner can complete the authorisation. "
-                          + "Credentials and tokens live in tournament-lazer.ini and never leave this machine.");
+                          + "Credentials, tokens and ports live in tournament-lazer.ini and never leave this machine.");
 
-            yield return new OsuSpriteText
-            {
-                Text = "Referee hub API settings",
-                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 24),
-            };
+            refereePortBox = new PortTextBox(
+                "Callback port",
+                tournamentStorage.RefereeCallbackPort,
+                "Port used by the local OAuth callback listener. It must match the OAuth application's callback URL. "
+                + "Locked while an access token is valid or the hub is connected.");
 
-            yield return guide;
-
-            yield return new ActionableInfo
-            {
-                Label = "Callback URL",
-                ButtonText = "Copy URL",
-                Action = refereeAuth.CopyCallbackUrl,
-                Value = RefereeAuthController.CallbackUrl,
-            };
-
-            yield return new LabelledTextBox(padded: true)
-            {
-                Label = "Client ID",
-                Current = tournamentStorage.RefereeClientId,
-            };
-
-            yield return new LabelledTextBox(padded: true)
-            {
-                Label = "Client secret",
-                Current = tournamentStorage.RefereeClientSecret,
-            };
-
-            yield return tokenRow = new ActionableInfo
-            {
-                Label = "Access token",
-                ButtonText = "Authorise",
-                Action = () =>
-                {
-                    if (refereeAuth.HasValidToken.Value)
-                        refereeAuth.Revoke();
-                    else
-                    {
-                        refereeAuth.AuthorizeAsync()
-                                   .ContinueWith(_ => Schedule(() => updateTokenRow()));
-                    }
-                },
-                Value = refereeAuth.StatusText.Value,
-                Failing = !refereeAuth.HasValidToken.Value,
-            };
-
-            yield return connectionRow = new ActionableInfo
-            {
-                Label = "Hub connection",
-                ButtonText = "Connect",
-                Action = () =>
-                {
-                    if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected)
-                        refereeAuth.DisconnectAsync().ContinueWith(_ => { });
-                    else
-                    {
-                        refereeAuth.ConnectAsync().ContinueWith(_ => { });
-                    }
-                },
-                Value = refereeAuth.ConnectionStatusText.Value,
-                ButtonEnabled = refereeAuth.HasValidToken.Value,
-            };
-
-            refereeAuth.ConnectionState.BindValueChanged(_ => Schedule(() =>
+            refereePortBox.ValueChanged += () => Schedule(() =>
             {
                 if (!IsDisposed)
-                    updateConnectionRow();
-            }));
+                    updateCallbackUrlRow();
+            });
 
-            refereeAuth.RefreshStatusAsync()
-                       .ContinueWith(_ => Schedule(() =>
-                       {
-                           if (!IsDisposed)
-                           {
-                               updateTokenRow();
-                               updateConnectionRow();
-                           }
-                       }));
+            var section = new SetupSection("Referee hub API settings", prominent: true)
+            {
+                Children = new Drawable[]
+                {
+                    guide,
+                    refereePortBox,
+                    callbackUrlRow = new ActionableInfo
+                    {
+                        Label = "Callback URL",
+                        ButtonText = "Copy URL",
+                        Action = () => clipboard?.SetText(refereeAuth.CallbackUrl),
+                        Value = refereeAuth.CallbackUrl,
+                    },
+                    textBox("Client ID", tournamentStorage.RefereeClientId, showRevertToDefaultButton: false),
+                    textBox("Client secret", tournamentStorage.RefereeClientSecret, showRevertToDefaultButton: false),
+                    tokenRow = new ActionableInfo
+                    {
+                        Label = "Access token",
+                        ButtonText = "Authorise",
+                        Action = () =>
+                        {
+                            if (refereeAuth.HasValidToken.Value)
+                                refereeAuth.Revoke();
+                            else
+                            {
+                                refereeAuth.AuthorizeAsync()
+                                           .ContinueWith(_ => Schedule(() => updateTokenRow()));
+                            }
+                        },
+                        Value = refereeAuth.StatusText.Value,
+                        Failing = !refereeAuth.HasValidToken.Value,
+                    },
+                    connectionRow = new ActionableInfo
+                    {
+                        Label = "Hub connection",
+                        ButtonText = "Connect",
+                        Action = () =>
+                        {
+                            if (refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected)
+                                refereeAuth.DisconnectAsync().ContinueWith(_ => { });
+                            else
+                            {
+                                refereeAuth.ConnectAsync().ContinueWith(_ => { });
+                            }
+                        },
+                        Value = refereeAuth.ConnectionStatusText.Value,
+                        ButtonEnabled = refereeAuth.HasValidToken.Value,
+                    },
+                },
+            };
+
+            updateTokenRow();
+
+            return section;
         }
 
-        private ActionableInfo tokenRow = null!;
-        private ActionableInfo connectionRow = null!;
+        private ActionableInfo? tokenRow;
+        private ActionableInfo? connectionRow;
+        private ActionableInfo? callbackUrlRow;
+        private ActionableInfo? webSocketUrlRow;
+        private PortTextBox? refereePortBox;
+
+        /// <summary>
+        /// Builds the tosu-compatible WebSocket data feed section: explains how to point an
+        /// existing tosu ws v1 overlay at the plugin's stream and offers a Copy URL button,
+        /// mirroring the referee callback URL row above.
+        /// </summary>
+        private Drawable webSocketSection()
+        {
+            var guide = new OsuTextFlowContainer(t => t.Font = OsuFont.GetFont(size: 14))
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Padding = SettingsPanel.CONTENT_PADDING,
+                Colour = ColourProvider.Content2,
+            };
+
+            guide.AddText($"While the tournament plugin is open, it hosts a tosu-compatible WebSocket v1 data stream on the configured port (default {TourneyDataWebSocketServer.DEFAULT_PORT}).\n\n");
+            guide.AddText("To reuse an existing tosu overlay, point its WebSocket URL from tosu's default (ws://127.0.0.1:24050/ws) to the WebSocket URL shown below: the field layout (tourney.manager, tourney.ipcClients, menu.bm, …) follows tosu's v1 schema, so usually only the URL changes.\n\n");
+            guide.AddText("The current beatmap's background image is additionally served at /backgroundImage on the same port.\n\n");
+            guide.AddText("Note: the stream covers the fields stream overlays commonly use; some tosu-specific fields are still placeholders.\n\n");
+            guide.AddText("A minimal sample overlay: ");
+            guide.AddArbitraryDrawable(new ExternalLinkButton(TourneyDataWebSocketServer.SAMPLE_OVERLAY_URL));
+
+            webSocketUrlRow = new ActionableInfo
+            {
+                Label = "WebSocket URL",
+                ButtonText = "Copy URL",
+                Action = () => clipboard?.SetText(webSocketUrl()),
+                Value = webSocketUrl(),
+            };
+
+            var portBox = new PortTextBox(
+                "WebSocket port",
+                tournamentStorage.WebSocketPort,
+                "Port used by the external overlay. The WebSocket server restarts automatically shortly after a valid change.");
+
+            portBox.ValueChanged += () => Schedule(() =>
+            {
+                if (!IsDisposed)
+                    updateWebSocketUrlRow();
+            });
+
+            return new SetupSection("WebSocket data feed (tosu-compatible)", prominent: true)
+            {
+                Children = new Drawable[]
+                {
+                    guide,
+                    portBox,
+                    webSocketUrlRow,
+                },
+            };
+        }
+
+        private string webSocketUrl() => $"ws://127.0.0.1:{TourneyDataWebSocketServer.ResolvePort(tournamentStorage.WebSocketPort.Value)}{TourneyDataWebSocketServer.PATH}";
+
+        /// <summary>
+        /// Mirrors lazer's Online / Alerts and Privacy settings. These are global lazer
+        /// settings and deliberately do not touch the tournament bracket data.
+        /// </summary>
+        private Drawable notificationSettingsSection() => new SetupSection("Notification settings", prominent: true)
+        {
+            Children = new Drawable[]
+            {
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnMentioned,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnUsernameMentioned),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnPrivateMessage,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnPrivateMessage),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = OnlineSettingsStrings.NotifyOnFriendPresenceChange,
+                    HintText = OnlineSettingsStrings.NotifyOnFriendPresenceChangeTooltip,
+                    Current = config.GetBindable<bool>(OsuSetting.NotifyOnFriendPresenceChange),
+                }),
+                new SettingsItemV2(new FormCheckBox
+                {
+                    Caption = AccountsStrings.PrivacyFriendsOnly.ToSentence(),
+                    HintText = AccountsStrings.PrivacyFriendsOnlyInfo.ToSentence(),
+                    Current = config.GetBindable<bool>(OsuSetting.PMFriendsOnly),
+                }),
+            },
+        };
 
         private void updateTokenRow()
         {
+            if (tokenRow == null)
+                return;
+
             tokenRow.Value = refereeAuth.StatusText.Value;
             tokenRow.Failing = !refereeAuth.HasValidToken.Value;
             tokenRow.ButtonText = refereeAuth.HasValidToken.Value ? "Revoke" : "Authorise";
@@ -711,11 +768,228 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void updateConnectionRow()
         {
+            if (connectionRow == null)
+                return;
+
             connectionRow.Value = refereeAuth.ConnectionStatusText.Value;
 
             bool connected = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
-            connectionRow.ButtonText = connected ? "Disconnect" : "Connect";
-            connectionRow.ButtonEnabled = connected || refereeAuth.HasValidToken.Value;
+            bool connecting = refereeAuth.ConnectionState.Value == RefereeConnectionState.Connecting;
+
+            connectionRow.ButtonText = connecting ? "Connecting..." : connected ? "Disconnect" : "Connect";
+            connectionRow.ButtonEnabled = !connecting && (connected || refereeAuth.HasValidToken.Value);
+
+            updateRefereePortState();
+        }
+
+        private void updateCallbackUrlRow()
+        {
+            if (callbackUrlRow == null)
+                return;
+
+            callbackUrlRow.Value = refereeAuth.CallbackUrl;
+        }
+
+        private void updateWebSocketUrlRow()
+        {
+            if (webSocketUrlRow == null)
+                return;
+
+            webSocketUrlRow.Value = webSocketUrl();
+        }
+
+        private void updateRefereePortState()
+        {
+            if (refereePortBox == null)
+                return;
+
+            refereePortBox.Disabled = refereeAuth.HasValidToken.Value
+                                      || refereeAuth.ConnectionState.Value == RefereeConnectionState.Connected;
+        }
+
+        private static Drawable checkbox(string caption, Bindable<bool> current, string? description = null)
+            => new SettingsItemV2(new FormCheckBox
+            {
+                Caption = caption,
+                HintText = hintText(description),
+                Current = current,
+            });
+
+        private static Drawable enumDropdown<T>(string caption, Bindable<T> current, string? description = null)
+            where T : struct, Enum
+            => new SettingsItemV2(new FormEnumDropdown<T>
+            {
+                Caption = caption,
+                HintText = hintText(description),
+                Current = current,
+            });
+
+        private static Drawable dropdown<T>(string caption, Bindable<T> current, IEnumerable<T> items, string? description = null, bool showRevertToDefaultButton = true)
+            => new SettingsItemV2(new FormDropdown<T>
+            {
+                Caption = caption,
+                HintText = hintText(description),
+                Items = items,
+                Current = current,
+            })
+            {
+                ShowRevertToDefaultButton = showRevertToDefaultButton,
+            };
+
+        private static Drawable slider(string caption, Bindable<double> current, bool displayAsPercentage = true)
+            => new SettingsItemV2(new FormSliderBar<double>
+            {
+                Caption = caption,
+                Current = current,
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = displayAsPercentage,
+            });
+
+        private static Drawable slider(string caption, Bindable<float> current, bool displayAsPercentage = true)
+            => new SettingsItemV2(new FormSliderBar<float>
+            {
+                Caption = caption,
+                Current = current,
+                KeyboardStep = 0.01f,
+                DisplayAsPercentage = displayAsPercentage,
+            });
+
+        private static Drawable textBox(string caption, Bindable<string> current, string? description = null, bool showRevertToDefaultButton = true)
+            => new SettingsItemV2(new FormTextBox
+            {
+                Caption = caption,
+                HintText = hintText(description),
+                Current = current,
+            })
+            {
+                ShowRevertToDefaultButton = showRevertToDefaultButton,
+            };
+
+        private static Drawable colourPicker(string caption, Bindable<string> current, string? description = null)
+            => new SettingsItemV2(new FormColourPicker(current)
+            {
+                Caption = caption,
+                HintText = hintText(description),
+            });
+
+        private static LocalisableString hintText(string? description) =>
+            string.IsNullOrEmpty(description) ? default : new LocalisableString(description);
+
+        private static Drawable subSection(string header, params Drawable[] children) => new SetupSection(header)
+        {
+            Children = children,
+        };
+
+        /// <summary>
+        /// The tournament video fallback settings. The custom colour rows are only visible
+        /// while <see cref="DefaultBackgroundStyle.CustomColors"/> is selected.
+        /// </summary>
+        private partial class DefaultBackgroundSettings : FillFlowContainer
+        {
+            [Resolved]
+            private LadderInfo ladderInfo { get; set; } = null!;
+
+            private readonly Bindable<DefaultBackgroundStyle> style = new Bindable<DefaultBackgroundStyle>();
+            private FillFlowContainer customColours = null!;
+            private bool customColourRowsVisible;
+
+            [BackgroundDependencyLoader]
+            private void load()
+            {
+                RelativeSizeAxes = Axes.X;
+                AutoSizeAxes = Axes.Y;
+                Direction = FillDirection.Vertical;
+                Spacing = new Vector2(0, SettingsSection.ITEM_SPACING_V2);
+
+                style.BindTo(ladderInfo.DefaultBackground);
+
+                Children = new Drawable[]
+                {
+                    enumDropdown(
+                        "Default background",
+                        ladderInfo.DefaultBackground,
+                        "Background shown when no main tournament video is available."),
+                    customColours = new FillFlowContainer
+                    {
+                        RelativeSizeAxes = Axes.X,
+                        AutoSizeAxes = Axes.Y,
+                        Direction = FillDirection.Vertical,
+                        Spacing = new Vector2(0, SettingsSection.ITEM_SPACING_V2),
+                    },
+                };
+
+                style.BindValueChanged(_ => updateCustomColoursVisibility(), true);
+            }
+
+            private void updateCustomColoursVisibility()
+            {
+                bool show = ladderInfo.DefaultBackground.Value == DefaultBackgroundStyle.CustomColors;
+
+                if (show == customColourRowsVisible)
+                    return;
+
+                customColourRowsVisible = show;
+
+                if (show)
+                {
+                    customColours.Children = new Drawable[]
+                    {
+                        colourPicker(
+                            "Gradient top colour",
+                            ladderInfo.DefaultBackgroundTopColour,
+                            "Top colour of the custom gradient."),
+                        colourPicker(
+                            "Gradient bottom colour",
+                            ladderInfo.DefaultBackgroundBottomColour,
+                            "Bottom colour of the custom gradient."),
+                    };
+                }
+                else
+                    customColours.Clear();
+            }
+
+            protected override void Dispose(bool isDisposing)
+            {
+                base.Dispose(isDisposing);
+
+                if (isDisposing)
+                    style.UnbindAll();
+            }
+        }
+
+        private partial class SkinDropdown : FormDropdown<Live<SkinInfo>>
+        {
+            protected override LocalisableString GenerateItemText(Live<SkinInfo> item) => item.ToString();
+        }
+
+        /// <summary>
+        /// A settings subsection using the same spacing and typography as lazer's settings overlay.
+        /// Top-level sections use the larger section header style.
+        /// </summary>
+        private partial class SetupSection : SettingsSubsection
+        {
+            private readonly LocalisableString header;
+            private readonly bool prominent;
+
+            protected override LocalisableString Header => header;
+
+            public SetupSection(LocalisableString header, bool prominent = false)
+            {
+                this.header = header;
+                this.prominent = prominent;
+            }
+
+            protected override Drawable CreateHeader() => new OsuSpriteText
+            {
+                Text = Header,
+                Font = prominent ? OsuFont.TorusAlternate.With(size: 30) : OsuFont.GetFont(size: 20),
+                Margin = new MarginPadding
+                {
+                    Vertical = prominent ? 8 : VERTICAL_PADDING,
+                    Horizontal = prominent ? 0 : 5,
+                },
+                Padding = SettingsPanel.CONTENT_PADDING,
+            };
         }
 
         /// <summary>
@@ -732,19 +1006,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             if (!quitArmed.Value)
             {
                 quitArmed.Value = true;
-                // reload();
                 return;
             }
 
             quitArmed.Value = false;
-
-            if (saveChanges.HasUnsavedChanges)
-            {
-                // reload();
-                dialogOverlay.Push(new ConfirmDialog("You have unsaved changes. Quit without saving?", () => sceneManager?.ExitTournament()));
-            }
-            else
-                sceneManager?.ExitTournament();
+            sceneManager?.ExitTournament();
         });
     }
 }

@@ -1,7 +1,12 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using osu.Framework.Allocation;
 using osu.Framework.Screens;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Legacy;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
 using osu.Game.Scoring;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Play.HUD;
@@ -26,6 +31,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
         {
             this.controller = controller;
         }
+
+        [Resolved]
+        private LadderInfo ladderInfo { get; set; } = null!;
 
         protected override void LoadComplete()
         {
@@ -67,13 +75,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
             controller.Detach(this);
         }
 
-        protected override ResultsScreen CreateResults(ScoreInfo score) => new TournamentResultsScreen(score)
+        protected override ResultsScreen CreateResults(ScoreInfo score)
         {
-            // No re-watch/retry from the embedded showcase results: the watch button would
-            // push onto the real screen stack and hijack the tournament UI.
-            AllowWatchingReplay = false,
-            AllowRetry = false,
-        };
+            // No re-watch/retry from the embedded showcase results for any style: the watch
+            // button would push onto the real screen stack and hijack the tournament UI.
+            return ladderInfo.ResultScreen.Value switch
+            {
+                ResultScreenStyle.Simple => new SimpleResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.V2 => new V2ResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.Legacy => new LegacyResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                _ => new SoloResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+            };
+        }
 
         protected override void Dispose(bool isDisposing)
         {

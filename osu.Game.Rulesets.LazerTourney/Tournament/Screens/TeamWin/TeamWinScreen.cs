@@ -43,7 +43,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.TeamWin
                 mainContainer = new Container
                 {
                     RelativeSizeAxes = Axes.Both,
-                }
+                },
+                new SyncedControlPanel(showChatHistory: true),
             };
 
             currentCompleted.BindValueChanged(_ => update());

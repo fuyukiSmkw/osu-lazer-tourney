@@ -7,6 +7,7 @@ using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Graphics.UserInterface;
 using osu.Framework.Input.Events;
 using osu.Framework.Testing;
 using osu.Framework.Threading;
@@ -97,13 +98,22 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         [Cached]
         private readonly MatchStartCountdownSounds countdownSounds = new MatchStartCountdownSounds();
 
+        /// <summary>
+        /// WebSocket server exposing tournament data for tosu-compatible overlays.
+        /// The port is configurable in Setup (default 50727, avoiding tosu's default 24050).
+        /// </summary>
+        [Cached]
+        private readonly TourneyDataWebSocketServer tourneyDataServer = new TourneyDataWebSocketServer();
+
         private Container chatContainer = null!;
         private FillFlowContainer buttons = null!;
 
         /// <summary>
-        /// Exit the tournament client. Called from the setup screen's exit button.
+        /// Exit the tournament client. Called from the setup screen, the tournament switcher
+        /// and host exit requests. Unsaved bracket changes are handled by <see cref="TournamentGame"/>.
         /// </summary>
-        public void ExitTournament() => tournamentGame?.ExitTournament();
+        /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
+        public void ExitTournament(Action? beforeExit = null) => tournamentGame?.ExitTournament(beforeExit);
 
         public TournamentSceneManager()
         {
@@ -219,6 +229,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 chatTimerService,
                 countdownTimer,
                 countdownSounds,
+                tourneyDataServer,
             };
 
             foreach (var drawable in screens)
@@ -229,6 +240,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             base.LoadComplete();
             SetScreen(typeof(SetupScreen));
+        }
+
+        protected override bool OnKeyDown(KeyDownEvent e)
+        {
+            // Global shortcut: focus the current screen's chat box for slash-command entry.
+            // Plain key only; a focused text box keeps normal input (it consumes the key first,
+            // and this guard covers the cases where the event still leaks through).
+            // RoomScreen is excluded: its lounge/joined structure hosts its own boxes.
+            if (!e.Repeat
+                && e.Key == Key.Slash
+                && !e.ShiftPressed && !e.ControlPressed && !e.AltPressed && !e.SuperPressed
+                && GetContainingInputManager()?.FocusedDrawable is not TextBox
+                && currentScreen is not RoomScreen
+                && currentScreen?.ChildrenOfType<TournamentChatTextBox>().FirstOrDefault() is { } chatBox)
+            {
+                chatBox.FocusForSlashEntry();
+                return true;
+            }
+
+            return base.OnKeyDown(e);
         }
 
         private float depth;
@@ -363,6 +394,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             protected override bool OnKeyDown(KeyDownEvent e)
             {
+                // Ignore keys pressed with modifiers so typing capitals (Shift + letter)
+                // in chat or other text boxes does not trigger screen shortcuts.
+                if (e.ShiftPressed || e.ControlPressed || e.AltPressed || e.SuperPressed)
+                    return false;
+
                 if (e.Key == shortcutKey)
                 {
                     TriggerClick();

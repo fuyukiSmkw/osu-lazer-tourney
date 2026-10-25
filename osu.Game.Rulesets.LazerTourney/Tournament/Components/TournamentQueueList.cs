@@ -33,7 +33,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved]
         private MultiplayerClient client { get; set; } = null!;
 
-        private bool firstPopulation = true;
+        // Which room object the list was populated for. Compared by reference (not bool):
+        // leave+join can coalesce into a single Scheduler.AddOnce tick that only ever sees
+        // the new room, so a "cleared on null" bool would never observe the null intermediate
+        // and keep showing the previous room's items. A reference check catches A -> B directly.
+        private MultiplayerRoom? populatedRoom;
 
         protected override DrawableRoomPlaylistItem CreateDrawablePlaylistItem(PlaylistItem item) => new NoEditQueuePlaylistItem(item);
 
@@ -64,19 +68,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         private void updateState()
         {
-            if (client.Room == null)
+            var room = client.Room;
+
+            if (room == null)
             {
                 Items.Clear();
-                firstPopulation = true;
+                populatedRoom = null;
                 return;
             }
 
-            if (firstPopulation)
+            if (!ReferenceEquals(room, populatedRoom))
             {
-                foreach (var item in client.Room.Playlist)
+                Items.Clear();
+
+                foreach (var item in room.Playlist)
                     addItem(item);
 
-                firstPopulation = false;
+                populatedRoom = room;
             }
 
             PlaylistItem? currentItem = client.Room == null ? null : new PlaylistItem(client.Room.CurrentPlaylistItem);

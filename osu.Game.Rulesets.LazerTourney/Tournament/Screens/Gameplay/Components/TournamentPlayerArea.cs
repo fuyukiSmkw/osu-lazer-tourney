@@ -11,6 +11,7 @@ using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Spectate;
@@ -24,7 +25,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
     /// </summary>
     /// <remarks>
     /// Forked so gameplay is driven by <see cref="TournamentSpectatorPlayer"/> (without the official
-    /// username label) instead of <see cref="MultiSpectatorPlayer"/>. Everything else mirrors official.
+    /// username label) instead of <see cref="MultiSpectatorPlayer"/>, and pushed through
+    /// <see cref="TournamentSpectatorPlayerLoader"/> so the loader cannot touch the shared track
+    /// (<see cref="PlayerLoader"/> muffles and stops it; other cells keep playing the master clock).
+    /// Everything else mirrors official.
     /// </remarks>
     public partial class TournamentPlayerArea : CompositeDrawable
     {
@@ -36,7 +40,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// <summary>
         /// Whether a <see cref="Player"/> is loaded in the area.
         /// </summary>
-        public bool PlayerLoaded => (stack?.CurrentScreen as Player)?.IsLoaded == true;
+        public bool PlayerLoaded => stack?.CurrentScreen is Player { IsLoaded: true };
 
         /// <summary>
         /// The user id this <see cref="TournamentPlayerArea"/> corresponds to.
@@ -57,6 +61,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// The currently-loaded score.
         /// </summary>
         public Score? Score { get; private set; }
+
+        /// <summary>
+        /// The score processor of the loaded player, if available.
+        /// </summary>
+        public ScoreProcessor? ScoreProcessor { get; private set; }
+
+        /// <summary>
+        /// The health processor of the loaded player, if available.
+        /// </summary>
+        public HealthProcessor? HealthProcessorPublic { get; private set; }
+
+        /// <summary>
+        /// The gameplay state of the loaded player (parsed playable beatmap + mods), if available.
+        /// Captured alongside <see cref="ScoreProcessor"/> when gameplay starts.
+        /// </summary>
+        public GameplayState? GameplayStatePublic { get; private set; }
+
+        /// <summary>
+        /// Per-score custom multiplier for the loaded score, applied to the cell HUD and results.
+        /// Set before <see cref="LoadScore"/>; 1 means no adjustment.
+        /// </summary>
+        public double ScoreWeight { get; set; } = 1;
 
         [Resolved]
         private BeatmapManager beatmapManager { get; set; } = null!;
@@ -88,7 +114,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             audioContainer.AddAdjustment(AdjustableProperty.Volume, volumeAdjustment);
         }
 
-        public void LoadScore(Score score)
+        public void LoadScore(Score score, bool suppressAudioEffects = false)
         {
             if (Score != null)
                 throw new InvalidOperationException($"Cannot load a new score on a {nameof(TournamentPlayerArea)} that has an existing score.");
@@ -115,17 +141,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 }
             };
 
-            stack.Push(new MultiSpectatorPlayerLoader(Score, () =>
+            // Single-player reset (suppressAudioEffects=true) uses our fork that neutralises
+            // PlayerLoader's track mute/stop + entrance filters. Normal start / full reset use
+            // the official loader to preserve the entrance blur/fade behaviour.
+            SpectatorPlayerLoader loader = suppressAudioEffects
+                ? new TournamentSpectatorPlayerLoader(Score, () => createPlayer())
+                : new MultiSpectatorPlayerLoader(Score, () => createPlayer());
+
+            stack.Push(loader);
+
+            loadingLayer.Hide();
+
+            TournamentSpectatorPlayer createPlayer()
             {
-                var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock);
-                player.OnGameplayStarted += () => OnGameplayStarted?.Invoke();
+                var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock)
+                {
+                    ScoreWeight = ScoreWeight,
+                };
+                player.OnGameplayStarted += () =>
+                {
+                    ScoreProcessor = player.ScoreProcessorPublic;
+                    HealthProcessorPublic = player.HealthProcessorPublic;
+                    GameplayStatePublic = player.GameplayStatePublic;
+                    OnGameplayStarted?.Invoke();
+                };
 
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
 
                 return player;
-            }));
-
-            loadingLayer.Hide();
+            }
         }
 
         public bool Mute

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>osu!lazer Tournament Overlay Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            color: #ff6b6b;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        .status.connected { background: #27ae60; }
+        .status.disconnected { background: #c0392b; }
+        .status.connecting { background: #f39c12; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .panel {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            border: 1px solid #0f3460;
+        }
+        .panel h2 {
+            color: #4ecdc4;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #0f3460;
+            padding-bottom: 10px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #0f3460;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #889; }
+        .info-value { color: #fff; font-family: monospace; }
+        .players-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .player-card {
+            background: #0f3460;
+            border-radius: 6px;
+            padding: 15px;
+            border-left: 4px solid #4ecdc4;
+        }
+        .player-card.team-right { border-left-color: #ff6b6b; }
+        .player-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+        }
+        .player-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.9rem;
+        }
+        .stat { color: #aaa; }
+        .stat-value { color: #fff; font-weight: bold; }
+        .map-info {
+            background: #0f3460;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .log {
+            background: #0d0d1a;
+            border-radius: 6px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #8f8;
+        }
+        .log-entry { padding: 2px 0; border-bottom: 1px solid #1a2; }
+        .log-entry.error { color: #f66; }
+        .log-entry.warn { color: #fc0; }
+    </style>
+</head>
+<body>
+    <h1>🎮 osu!lazer Tournament Overlay Test</h1>
+    
+    <div class="status" id="status">Disconnected</div>
+    
+    <div class="grid">
+        <div class="panel">
+            <h2>📊 Tournament Manager</h2>
+            <div class="info-row">
+                <span class="info-label">IPC State</span>
+                <span class="info-value" id="ipcState">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Score Visible</span>
+                <span class="info-value" id="scoreVisible">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Left Score</span>
+                <span class="info-value" id="leftScore">0</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Right Score</span>
+                <span class="info-value" id="rightScore">0</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Playing (tosu rule)</span>
+                <span class="info-value" id="playing">-</span>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>🗺️ Current Map</h2>
+            <div class="info-row">
+                <span class="info-label">Title</span>
+                <span class="info-value" id="mapTitle">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Artist</span>
+                <span class="info-value" id="mapArtist">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Mapper</span>
+                <span class="info-value" id="mapMapper">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Difficulty</span>
+                <span class="info-value" id="mapDiff">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Star Rating</span>
+                <span class="info-value" id="mapStars">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">BPM</span>
+                <span class="info-value" id="mapBpm">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Length</span>
+                <span class="info-value" id="mapLength">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Position</span>
+                <span class="info-value" id="mapPosition">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Ranked Status</span>
+                <span class="info-value" id="mapRanked">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Menu State / Mode</span>
+                <span class="info-value" id="menuState">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Mods</span>
+                <span class="info-value" id="menuMods">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">MD5</span>
+                <span class="info-value" id="mapMd5">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Mapset ID</span>
+                <span class="info-value" id="mapSetId">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">CS / AR / OD / HP (mods)</span>
+                <span class="info-value" id="mapStats">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Base CS/AR/OD/HP/SR</span>
+                <span class="info-value" id="mapBaseStats">-</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="panel" style="margin-top: 20px;">
+        <h2>👥 Players (ipcClients)</h2>
+        <div class="players-grid" id="playersGrid">
+            <div style="grid-column: 1 / -1; text-align: center; color: #666;">No players spectating</div>
+        </div>
+    </div>
+    
+    <div class="panel" style="margin-top: 20px;">
+        <h2>💬 Room Chat</h2>
+        <div class="log" id="chat" style="color: #eee;"></div>
+    </div>
+
+    <div class="panel" style="margin-top: 20px;">
+        <h2>📝 Connection Log</h2>
+        <div class="log" id="log"></div>
+    </div>
+
+    <script type="module">
+        const WS_URL = 'ws://127.0.0.1:50727/ws';
+        const statusEl = document.getElementById('status');
+        const logEl = document.getElementById('log');
+        let ws = null;
+        let reconnectTimer = null;
+
+        function log(msg, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function setStatus(text, cls) {
+            statusEl.textContent = text;
+            statusEl.className = `status ${cls}`;
+        }
+
+        function connect() {
+            setStatus('Connecting...', 'connecting');
+            log(`Connecting to ${WS_URL}`);
+            
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                setStatus('Connected ✓', 'connected');
+                log('WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleData(data);
+                } catch (e) {
+                    log(`Parse error: ${e.message}`, 'error');
+                }
+            };
+            
+            ws.onclose = () => {
+                setStatus('Disconnected', 'disconnected');
+                log('WebSocket closed, reconnecting in 3s...', 'warn');
+                reconnectTimer = setTimeout(connect, 3000);
+            };
+            
+            ws.onerror = (err) => {
+                log('WebSocket error', 'error');
+            };
+        }
+
+        // Same playing rule as CYTLS osuSocket._detectPlaying
+        function detectPlaying(data) {
+            const time = data.menu?.bm?.time;
+            if (!time) return false;
+            const cur = Number(time.current);
+            const full = Number(time.full);
+            if (!Number.isFinite(cur) || !Number.isFinite(full) || full <= 0) return false;
+            if (cur <= 0 || cur >= full) return false;
+            const clients = data.tourney?.ipcClients;
+            if (!Array.isArray(clients) || clients.length === 0) return false;
+            return clients.some(c => typeof c?.gameplay?.score === 'number');
+        }
+
+        function handleData(data) {
+            // Tournament data
+            if (data.tourney) {
+                const m = data.tourney.manager;
+                updateEl('ipcState', m.ipcState === 0 ? 'Playing (0)' : `Lobby/Idle (${m.ipcState})`);
+                updateEl('scoreVisible', m.bools?.scoreVisible ? 'Yes' : 'No');
+                updateEl('leftScore', m.gameplay?.score?.left ?? 0);
+                updateEl('rightScore', m.gameplay?.score?.right ?? 0);
+                updateEl('playing', detectPlaying(data) ? 'YES ▶' : 'no');
+                
+                // Players
+                const clients = data.tourney.ipcClients || [];
+                renderPlayers(clients);
+
+                // Chat
+                renderChat(m.chat || []);
+            }
+            
+            // Map data (times are milliseconds, matching tosu)
+            if (data.menu?.bm) {
+                const bm = data.menu.bm;
+                updateEl('mapTitle', bm.metadata?.title || '-');
+                updateEl('mapArtist', bm.metadata?.artist || '-');
+                updateEl('mapMapper', bm.metadata?.creator || '-');
+                updateEl('mapDiff', bm.metadata?.difficulty || '-');
+                updateEl('mapStars', bm.stats?.SR?.toFixed(2) || '-');
+                updateEl('mapBpm', bm.stats?.BPM?.common || '-');
+                updateEl('mapLength', bm.time?.full ? formatTime(bm.time.full) : '-');
+                updateEl('mapPosition', bm.time?.current != null ? formatTime(bm.time.current) : '-');
+                updateEl('mapRanked', bm.rankedStatus ?? '-');
+                updateEl('mapMd5', bm.md5 || '-');
+                updateEl('mapSetId', bm.set || '-');
+                const stats = bm.stats;
+                if (stats) {
+                    updateEl('mapStats', `CS: ${stats.CS} | AR: ${stats.AR} | OD: ${stats.OD} | HP: ${stats.HP}`);
+                }
+                const base = bm.originalStats;
+                if (base) {
+                    updateEl('mapBaseStats', `CS: ${base.CS} | AR: ${base.AR} | OD: ${base.OD} | HP: ${base.HP} | SR: ${Number(base.SR)?.toFixed(2) ?? base.SR}`);
+                }
+            }
+
+            if (data.menu) {
+                updateEl('menuState', `state=${data.menu.state ?? '-'} mode=${data.menu.gameMode ?? '-'}`);
+                updateEl('menuMods', data.menu.mods?.str ?? '-');
+            }
+        }
+
+        let lastChatSig = '';
+        function renderChat(msgs) {
+            const el = document.getElementById('chat');
+            if (!el || !Array.isArray(msgs)) return;
+            const sig = msgs.map(m => `${m.name}|${m.messageBody}`).join('\n');
+            if (sig === lastChatSig) return;
+            lastChatSig = sig;
+            el.innerHTML = msgs.slice(-50).map(m =>
+                `<div class="log-entry">[${m.time || ''}] <b>[${m.team || '?'}] ${escapeHtml(m.name || '?')}</b>: ${escapeHtml(m.messageBody || '')}</div>`
+            ).join('') || '<div style="color:#666;">No chat messages</div>';
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function renderPlayers(clients) {
+            const grid = document.getElementById('playersGrid');
+            if (clients.length === 0) {
+                grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #666;">No players spectating</div>';
+                return;
+            }
+            
+            grid.innerHTML = clients.map(c => `
+                <div class="player-card team-${c.team}">
+                    <div class="player-name">${c.spectating?.name || c.user?.name || 'Unknown'} <span style="font-size:0.8em; color:#889;">(${c.team})</span> <span style="font-size:0.8em; color:#4ecdc4;">[${escapeHtml(c.gameplay?.mods?.str || '')}]</span></div>
+                    <div class="player-stats">
+                        <div class="stat">Score: <span class="stat-value">${c.gameplay?.score?.toLocaleString() || 0}</span></div>
+                        <div class="stat">Acc: <span class="stat-value">${(c.gameplay?.accuracy * 100)?.toFixed(2) || 0}%</span></div>
+                        <div class="stat">Combo: <span class="stat-value">${c.gameplay?.combo?.current || 0} / ${c.gameplay?.combo?.max || 0}</span></div>
+                        <div class="stat">HP: <span class="stat-value">${((c.gameplay?.hp?.normal || 0) * 100).toFixed(1)}%</span></div>
+                        <div class="stat">PP: <span class="stat-value">${c.gameplay?.pp?.current?.toFixed(0) || 0}</span> <span style="color:#666;">(fc ${c.gameplay?.pp?.fc?.toFixed(0) || 0})</span></div>
+                        <div class="stat">UR: <span class="stat-value">${c.gameplay?.hits?.unstableRate?.toFixed(2) || 0}</span></div>
+                        <div class="stat">300: <span class="stat-value">${c.gameplay?.hits?.['300'] || 0}</span></div>
+                        <div class="stat">100: <span class="stat-value">${c.gameplay?.hits?.['100'] || 0}</span></div>
+                        <div class="stat">50: <span class="stat-value">${c.gameplay?.hits?.['50'] || 0}</span></div>
+                        <div class="stat">Miss: <span class="stat-value">${c.gameplay?.hits?.['0'] || 0}</span></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateEl(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        }
+
+        function formatTime(ms) {
+            const n = Number(ms);
+            if (!Number.isFinite(n) || n <= 0) return '0:00';
+            const sec = Math.floor(n / 1000);
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
+        // Start
+        connect();
+        
+        // Cleanup on unload
+        window.addEventListener('beforeunload', () => {
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            if (ws) ws.close();
+        });
+    </script>
+</body>
+</html>

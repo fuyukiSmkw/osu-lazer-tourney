@@ -42,11 +42,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         private OsuSpriteText usernameText = null!;
         private Color4 usernameColour;
+        private string assignedUsername = string.Empty;
         private Container logoContainer = null!;
         private OsuLogo logo = null!;
         private Background? idleBackground;
 
-        private const double idle_fade_in_duration = 300;
+        private const double first_fade_in_duration = 300;
+        private const double idle_fade_in_duration = 2000;
+        private const double idle_fade_out_duration = 2000;
+
+        private const double background_switch_internal = 10000;
+        private const int background_switch_delta_range = 1000;
 
         /// <summary>
         /// Cell height at which the idle logo and username sizes look right (2-4 players per team).
@@ -68,13 +74,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private Bindable<Skin> currentSkin = null!;
         private IBindable<WorkingBeatmap> beatmapCopy = null!;
         private int backgroundVersion;
+        private bool isFirstBackgroundLoad = true;
 
         /// <summary>
         /// Whether gameplay (or its result/last frame) is currently attached.
         /// </summary>
         public bool HasPlay => PlayArea != null;
 
+        /// <summary>
+        /// Whether the assigned player's username should be visible.
+        /// </summary>
+        public BindableBool ShowUsername { get; } = new BindableBool(true);
+
         public TournamentPlayerArea? PlayArea { get; private set; }
+
+        /// <summary>
+        /// User ID this cell is assigned to. Retained while gameplay visuals are attached
+        /// so result/last frames keep their owner's label across reassignments.
+        /// Cleared together with the play visuals.
+        /// </summary>
+        public int? AssignedUserId { get; private set; }
 
         public SpectateCell(SeasonalBackgroundLoader backgrounds)
         {
@@ -122,6 +141,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     ShadowColour = new Color4(0, 0, 0, 0.5f),
                 },
             };
+
+            ShowUsername.BindValueChanged(_ => updateUsernameVisibility(), true);
 
             backgroundSource = config.GetBindable<BackgroundSource>(OsuSetting.MenuBackgroundSource).GetBoundCopy();
             currentSkin = skins.CurrentSkin.GetBoundCopy();
@@ -189,18 +210,26 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 var old = idleBackground;
                 bool first = old == null;
 
-                old?.FadeOut(400, Easing.OutQuint);
+                old?.FadeOut(idle_fade_out_duration, Easing.OutQuint);
                 old?.Expire();
 
                 // Depth must be assigned before adding to the hierarchy.
                 loaded.Depth = float.MaxValue;
                 AddInternal(idleBackground = loaded);
 
-                // Fade the background in together with the logo so neither pops in alone.
-                loaded.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
 
-                if (first)
-                    logoContainer.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
+                if (first) // first background is default background
+                {
+                    // Fade the background in together with the logo so neither pops in alone.
+                    loaded.FadeInFromZero(first_fade_in_duration, Easing.OutQuint);
+                    Scheduler.AddDelayed(updateBackground, RNG.Next(50, 500)); // quickly switch to seasonal
+                    logoContainer.FadeInFromZero(first_fade_in_duration, Easing.OutQuint);
+                }
+                else
+                {
+                    loaded.FadeInFromZero(idle_fade_in_duration, Easing.OutQuint);
+                    Scheduler.AddDelayed(updateBackground, background_switch_internal + RNG.Next(-background_switch_delta_range, background_switch_delta_range)); // switch to next
+                }
             }));
         });
 
@@ -210,9 +239,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// "Background source" setting, then the default rotation. The seasonal list
         /// arrives asynchronously after login, so early calls fall back to the
         /// setting/default background until the list is available.
+        /// On first load, returns a default background immediately to avoid lag
+        /// when creating multiple cells (e.g. on Reset spectate).
         /// </summary>
         private Background createBackground()
         {
+            // On first load, return default background immediately to avoid
+            // the lag of creating multiple SeasonalBackground instances.
+            if (isFirstBackgroundLoad)
+            {
+                isFirstBackgroundLoad = false;
+                return new Background(defaultTextureName());
+            }
+
             Background? next = backgrounds.LoadNextBackground();
 
             // Unlike the main menu, the tournament client honours the configured source
@@ -246,14 +285,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// <summary>
         /// Assigns a player to this cell. Null/empty username hides the label (idle slot).
         /// </summary>
-        public void Assign(string? username, Color4 colour)
+        public void Assign(string? username, Color4 colour, int? userId = null)
         {
             usernameText.FinishTransforms();
             usernameText.Scale = Vector2.One;
 
-            usernameText.Text = username ?? string.Empty;
+            assignedUsername = username ?? string.Empty;
+            usernameText.Text = assignedUsername;
             usernameText.Colour = usernameColour = colour;
-            usernameText.Alpha = string.IsNullOrEmpty(username) ? 0 : 1;
+            updateUsernameVisibility();
+            AssignedUserId = userId;
+        }
+
+        private void updateUsernameVisibility()
+        {
+            usernameText.Alpha = ShowUsername.Value && !string.IsNullOrEmpty(assignedUsername) ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Reapplies the team text colour without reassigning the player (keeps the label,
+        /// its transforms and the pinned owner intact).
+        /// </summary>
+        public void UpdateUsernameColour(Color4 colour)
+        {
+            usernameColour = colour;
+            usernameText.Colour = colour;
         }
 
         /// <summary>
@@ -284,9 +340,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         /// <summary>
         /// Removes gameplay, returning to the idle background.
+        /// Also releases the owner pin, so the next assignment may relabel freely.
         /// </summary>
         public void ClearPlay()
         {
+            AssignedUserId = null;
+
             if (PlayArea == null)
                 return;
 

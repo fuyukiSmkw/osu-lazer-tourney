@@ -4,17 +4,15 @@
 using System;
 using System.Collections.Generic;
 using osu.Framework.Allocation;
+using osu.Framework.Audio;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
+using osu.Framework.Logging;
 using osu.Game.Configuration;
 using osu.Game.Rulesets;
+using osu.Game.Rulesets.Configuration;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
-using osu.Game.Rulesets.Mania.Configuration;
-using osu.Game.Rulesets.Mania.UI;
-using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Scoring;
-using osu.Game.Rulesets.Taiko.Configuration;
-using osu.Game.Rulesets.UI;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
 {
@@ -28,33 +26,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private OsuConfigManager config { get; set; } = null!;
 
         [Resolved]
+        private AudioManager audio { get; set; } = null!;
+
+        [Resolved]
         private RulesetStore rulesetStore { get; set; } = null!;
 
         [Resolved]
         private IRulesetConfigCache configCache { get; set; } = null!;
 
-        private readonly List<System.Action> restoreActions = new List<System.Action>();
+        private readonly List<Action> restoreActions = new List<Action>();
 
-        private OsuRulesetConfigManager? osuRulesetConfig;
-        private TaikoRulesetConfigManager? taikoRulesetConfig;
-        private ManiaRulesetConfigManager? maniaRulesetConfig;
-
-        /// <summary>
-        /// The live osu! ruleset config, or null when the ruleset is unavailable.
-        /// </summary>
-        public OsuRulesetConfigManager? OsuRulesetConfig => osuRulesetConfig ??= getRulesetConfig<OsuRulesetConfigManager>("osu");
+        // Official ruleset types must only ever be touched from method bodies
+        // (resolved lazily on first use), never from fields, signatures or attributes,
+        // or this whole assembly fails to load. See RulesetAssemblyIsolationTest.
 
         /// <summary>
-        /// The live taiko ruleset config, or null when the ruleset is unavailable.
+        /// The live ruleset config for a short name (osu, taiko, mania), or null when unavailable.
         /// </summary>
-        public TaikoRulesetConfigManager? TaikoRulesetConfig => taikoRulesetConfig ??= getRulesetConfig<TaikoRulesetConfigManager>("taiko");
-
-        /// <summary>
-        /// The live mania ruleset config, or null when the ruleset is unavailable.
-        /// </summary>
-        public ManiaRulesetConfigManager? ManiaRulesetConfig => maniaRulesetConfig ??= getRulesetConfig<ManiaRulesetConfigManager>("mania");
-
-        private T? getRulesetConfig<T>(string shortName) where T : class
+        public IRulesetConfigManager? GetRulesetConfig(string shortName)
         {
             try
             {
@@ -62,7 +51,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 if (info == null)
                     return null;
 
-                return configCache.GetConfigFor(info.CreateInstance()) as T;
+                return configCache.GetConfigFor(info.CreateInstance());
             }
             catch (InvalidOperationException)
             {
@@ -76,6 +65,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         public void ApplyFromBracket(VisualAudioSettings? bracket)
         {
             var effective = bracket ?? new VisualAudioSettings();
+            var defaults = new VisualAudioSettings();
 
             restoreActions.Clear();
 
@@ -83,14 +73,47 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             {
                 var bindable = config.GetBindable<T>(setting);
                 T value = bindable.Value;
-                restoreActions.Add(() => bindable.Value = value);
+                T defaultValue = bindable.Default;
+                restoreActions.Add(() =>
+                {
+                    bindable.Default = defaultValue;
+                    bindable.Value = value;
+                });
             }
 
-            void apply<T>(OsuSetting setting, T value) => config.GetBindable<T>(setting).Value = value;
+            void apply<T>(OsuSetting setting, T value, T defaultValue)
+            {
+                var bindable = config.GetBindable<T>(setting);
+                // The reset button follows the bindable's default, so expose the tournament
+                // model defaults instead of lazer's own setting defaults.
+                bindable.Default = defaultValue;
+                bindable.Value = value;
+            }
+
+            void backupAudio(BindableDouble bindable)
+            {
+                double value = bindable.Value;
+                double defaultValue = bindable.Default;
+                restoreActions.Add(() =>
+                {
+                    bindable.Default = defaultValue;
+                    bindable.Value = value;
+                });
+            }
+
+            void applyAudio(BindableDouble bindable, double value, double defaultValue)
+            {
+                bindable.Default = defaultValue;
+                bindable.Value = value;
+            }
 
             backup<ScoringMode>(OsuSetting.ScoreDisplayMode);
             backup<bool>(OsuSetting.HitLighting);
             backup<bool>(OsuSetting.StarFountains);
+            backup<double>(OsuSetting.VolumeInactive);
+            backupAudio(audio.VolumeTrack);
+            backupAudio(audio.VolumeSample);
+            backup<double>(OsuSetting.HitsoundVolume);
             backup<float>(OsuSetting.PositionalHitsoundsLevel);
             backup<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             backup<double>(OsuSetting.DimLevel);
@@ -113,30 +136,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             backup<bool>(OsuSetting.GameplayDisableWinKey);
             backup<bool>(OsuSetting.IncreaseFirstObjectVisibility);
 
-            apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode);
-            apply(OsuSetting.HitLighting, effective.HitLighting);
-            apply(OsuSetting.StarFountains, effective.StarFountains);
-            apply(OsuSetting.PositionalHitsoundsLevel, effective.PositionalHitsoundsLevel);
-            apply(OsuSetting.AlwaysPlayFirstComboBreak, effective.AlwaysPlayFirstComboBreak);
-            apply(OsuSetting.DimLevel, effective.DimLevel);
-            apply(OsuSetting.BlurLevel, effective.BlurLevel);
-            apply(OsuSetting.LightenDuringBreaks, effective.LightenDuringBreaks);
-            apply(OsuSetting.FadePlayfieldWhenHealthLow, effective.FadePlayfieldWhenHealthLow);
-            apply(OsuSetting.BeatmapSkins, effective.BeatmapSkins);
-            apply(OsuSetting.BeatmapColours, effective.BeatmapColours);
-            apply(OsuSetting.BeatmapHitsounds, effective.BeatmapHitsounds);
-            apply(OsuSetting.ShowStoryboard, effective.ShowStoryboard);
-            apply(OsuSetting.ComboColourNormalisationAmount, effective.ComboColourNormalisationAmount);
-            apply(OsuSetting.HUDVisibilityMode, effective.HUDVisibilityMode);
-            apply(OsuSetting.ReplaySettingsOverlay, effective.ReplaySettingsOverlay);
-            apply(OsuSetting.KeyOverlay, effective.KeyOverlay);
-            apply(OsuSetting.GameplayLeaderboard, effective.GameplayLeaderboard);
-            apply(OsuSetting.ShowHealthDisplayWhenCantFail, effective.ShowHealthDisplayWhenCantFail);
-            apply(OsuSetting.GameplayCursorSize, effective.GameplayCursorSize);
-            apply(OsuSetting.AutoCursorSize, effective.AutoCursorSize);
-            apply(OsuSetting.GameplayCursorDuringTouch, effective.GameplayCursorDuringTouch);
-            apply(OsuSetting.GameplayDisableWinKey, effective.GameplayDisableWinKey);
-            apply(OsuSetting.IncreaseFirstObjectVisibility, effective.IncreaseFirstObjectVisibility);
+            apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode, defaults.ScoreDisplayMode);
+            apply(OsuSetting.HitLighting, effective.HitLighting, defaults.HitLighting);
+            apply(OsuSetting.StarFountains, effective.StarFountains, defaults.StarFountains);
+            apply(OsuSetting.VolumeInactive, effective.VolumeInactive, defaults.VolumeInactive);
+            applyAudio(audio.VolumeTrack, effective.MusicVolume, defaults.MusicVolume);
+            applyAudio(audio.VolumeSample, effective.EffectVolume, defaults.EffectVolume);
+            apply(OsuSetting.HitsoundVolume, effective.HitsoundVolume, defaults.HitsoundVolume);
+            apply(OsuSetting.PositionalHitsoundsLevel, effective.PositionalHitsoundsLevel, defaults.PositionalHitsoundsLevel);
+            apply(OsuSetting.AlwaysPlayFirstComboBreak, effective.AlwaysPlayFirstComboBreak, defaults.AlwaysPlayFirstComboBreak);
+            apply(OsuSetting.DimLevel, effective.DimLevel, defaults.DimLevel);
+            apply(OsuSetting.BlurLevel, effective.BlurLevel, defaults.BlurLevel);
+            apply(OsuSetting.LightenDuringBreaks, effective.LightenDuringBreaks, defaults.LightenDuringBreaks);
+            apply(OsuSetting.FadePlayfieldWhenHealthLow, effective.FadePlayfieldWhenHealthLow, defaults.FadePlayfieldWhenHealthLow);
+            apply(OsuSetting.BeatmapSkins, effective.BeatmapSkins, defaults.BeatmapSkins);
+            apply(OsuSetting.BeatmapColours, effective.BeatmapColours, defaults.BeatmapColours);
+            apply(OsuSetting.BeatmapHitsounds, effective.BeatmapHitsounds, defaults.BeatmapHitsounds);
+            apply(OsuSetting.ShowStoryboard, effective.ShowStoryboard, defaults.ShowStoryboard);
+            apply(OsuSetting.ComboColourNormalisationAmount, effective.ComboColourNormalisationAmount, defaults.ComboColourNormalisationAmount);
+            apply(OsuSetting.HUDVisibilityMode, effective.HUDVisibilityMode, defaults.HUDVisibilityMode);
+            apply(OsuSetting.ReplaySettingsOverlay, effective.ReplaySettingsOverlay, defaults.ReplaySettingsOverlay);
+            apply(OsuSetting.KeyOverlay, effective.KeyOverlay, defaults.KeyOverlay);
+            apply(OsuSetting.GameplayLeaderboard, effective.GameplayLeaderboard, defaults.GameplayLeaderboard);
+            apply(OsuSetting.ShowHealthDisplayWhenCantFail, effective.ShowHealthDisplayWhenCantFail, defaults.ShowHealthDisplayWhenCantFail);
+            apply(OsuSetting.GameplayCursorSize, effective.GameplayCursorSize, defaults.GameplayCursorSize);
+            apply(OsuSetting.AutoCursorSize, effective.AutoCursorSize, defaults.AutoCursorSize);
+            apply(OsuSetting.GameplayCursorDuringTouch, effective.GameplayCursorDuringTouch, defaults.GameplayCursorDuringTouch);
+            apply(OsuSetting.GameplayDisableWinKey, effective.GameplayDisableWinKey, defaults.GameplayDisableWinKey);
+            apply(OsuSetting.IncreaseFirstObjectVisibility, effective.IncreaseFirstObjectVisibility, defaults.IncreaseFirstObjectVisibility);
         }
 
         /// <summary>
@@ -169,6 +196,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             target.ScoreDisplayMode = get<ScoringMode>(OsuSetting.ScoreDisplayMode);
             target.HitLighting = get<bool>(OsuSetting.HitLighting);
             target.StarFountains = get<bool>(OsuSetting.StarFountains);
+            target.VolumeInactive = get<double>(OsuSetting.VolumeInactive);
+            target.MusicVolume = audio.VolumeTrack.Value;
+            target.EffectVolume = audio.VolumeSample.Value;
+            target.HitsoundVolume = get<double>(OsuSetting.HitsoundVolume);
             target.PositionalHitsoundsLevel = get<float>(OsuSetting.PositionalHitsoundsLevel);
             target.AlwaysPlayFirstComboBreak = get<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             target.DimLevel = get<double>(OsuSetting.DimLevel);
@@ -199,68 +230,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         public void ApplyRulesetFromBracket(RulesetSettings? bracket)
         {
             var effective = bracket ?? new RulesetSettings();
+            var defaults = new RulesetSettings();
 
-            void backup<T>(Bindable<T> bindable)
+            foreach (var section in RulesetSettingDescriptors.Sections)
             {
-                T value = bindable.Value;
-                restoreActions.Add(() => bindable.Value = value);
-            }
+                object? manager = GetRulesetConfig(section.Key);
 
-            if (OsuRulesetConfig is { } osu)
-            {
-                var snakingIn = osu.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders);
-                var snakingOut = osu.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders);
-                var hitAnimations = osu.GetBindable<bool>(OsuRulesetSetting.HitAnimations);
-                var cursorTrail = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail);
-                var cursorRipples = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples);
-                var borderStyle = osu.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle);
+                if (manager == null)
+                    continue;
 
-                backup(snakingIn);
-                backup(snakingOut);
-                backup(hitAnimations);
-                backup(cursorTrail);
-                backup(cursorRipples);
-                backup(borderStyle);
+                foreach (var setting in section.Value)
+                {
+                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
 
-                snakingIn.Value = effective.Osu.SnakingInSliders;
-                snakingOut.Value = effective.Osu.SnakingOutSliders;
-                hitAnimations.Value = effective.Osu.HitAnimations;
-                cursorTrail.Value = effective.Osu.ShowCursorTrail;
-                cursorRipples.Value = effective.Osu.ShowCursorRipples;
-                borderStyle.Value = effective.Osu.PlayfieldBorderStyle;
-            }
+                    if (bindable == null)
+                        continue;
 
-            if (TaikoRulesetConfig is { } taiko)
-            {
-                var touchScheme = taiko.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme);
-                var hitAnimations = taiko.GetBindable<bool>(TaikoRulesetSetting.HitAnimations);
-                var rateAdjusted = taiko.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation);
-
-                backup(touchScheme);
-                backup(hitAnimations);
-                backup(rateAdjusted);
-
-                touchScheme.Value = effective.Taiko.TouchControlScheme;
-                hitAnimations.Value = effective.Taiko.HitAnimations;
-                rateAdjusted.Value = effective.Taiko.RateAdjustedHitAnimation;
-            }
-
-            if (ManiaRulesetConfig is { } mania)
-            {
-                var scrollSpeed = mania.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed);
-                var scrollDirection = mania.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection);
-                var noteColouring = mania.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring);
-                var touchOverlay = mania.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay);
-
-                backup(scrollSpeed);
-                backup(scrollDirection);
-                backup(noteColouring);
-                backup(touchOverlay);
-
-                scrollSpeed.Value = effective.Mania.ScrollSpeed;
-                scrollDirection.Value = effective.Mania.ScrollDirection;
-                noteColouring.Value = effective.Mania.TimingBasedNoteColouring;
-                touchOverlay.Value = effective.Mania.TouchOverlay;
+                    backupBindable(bindable);
+                    RulesetSettingDescriptors.SetBindableDefault(bindable,
+                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(defaults)));
+                    RulesetSettingDescriptors.SetBindableValue(bindable,
+                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(effective)));
+                }
             }
         }
 
@@ -269,30 +260,42 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// </summary>
         public void SnapshotRulesetToBracket(RulesetSettings target)
         {
-            if (OsuRulesetConfig is { } osu)
+            foreach (var section in RulesetSettingDescriptors.Sections)
             {
-                target.Osu.SnakingInSliders = osu.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders).Value;
-                target.Osu.SnakingOutSliders = osu.GetBindable<bool>(OsuRulesetSetting.SnakingOutSliders).Value;
-                target.Osu.HitAnimations = osu.GetBindable<bool>(OsuRulesetSetting.HitAnimations).Value;
-                target.Osu.ShowCursorTrail = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorTrail).Value;
-                target.Osu.ShowCursorRipples = osu.GetBindable<bool>(OsuRulesetSetting.ShowCursorRipples).Value;
-                target.Osu.PlayfieldBorderStyle = osu.GetBindable<PlayfieldBorderStyle>(OsuRulesetSetting.PlayfieldBorderStyle).Value;
-            }
+                object? manager = GetRulesetConfig(section.Key);
 
-            if (TaikoRulesetConfig is { } taiko)
-            {
-                target.Taiko.TouchControlScheme = taiko.GetBindable<TaikoTouchControlScheme>(TaikoRulesetSetting.TouchControlScheme).Value;
-                target.Taiko.HitAnimations = taiko.GetBindable<bool>(TaikoRulesetSetting.HitAnimations).Value;
-                target.Taiko.RateAdjustedHitAnimation = taiko.GetBindable<bool>(TaikoRulesetSetting.RateAdjustedHitAnimation).Value;
-            }
+                if (manager == null)
+                    continue;
 
-            if (ManiaRulesetConfig is { } mania)
-            {
-                target.Mania.ScrollSpeed = mania.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed).Value;
-                target.Mania.ScrollDirection = mania.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection).Value;
-                target.Mania.TimingBasedNoteColouring = mania.GetBindable<bool>(ManiaRulesetSetting.TimingBasedNoteColouring).Value;
-                target.Mania.TouchOverlay = mania.GetBindable<bool>(ManiaRulesetSetting.TouchOverlay).Value;
+                foreach (var setting in section.Value)
+                {
+                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+
+                    if (bindable == null)
+                        continue;
+
+                    object? modelValue = RulesetSettingDescriptors.ToModelValue(setting,
+                        RulesetSettingDescriptors.GetBindableValue(bindable));
+
+                    if (modelValue != null)
+                        setting.SetModelValue(target, modelValue);
+                }
             }
+        }
+
+        /// <summary>
+        /// Remembers a live bindable for restoration on exit. Captures only reflection
+        /// handles and boxed values, so the closure never binds foreign assemblies.
+        /// </summary>
+        private void backupBindable(object bindable)
+        {
+            object? value = RulesetSettingDescriptors.GetBindableValue(bindable);
+            object? defaultValue = RulesetSettingDescriptors.GetBindableDefault(bindable);
+            restoreActions.Add(() =>
+            {
+                RulesetSettingDescriptors.SetBindableDefault(bindable, defaultValue);
+                RulesetSettingDescriptors.SetBindableValue(bindable, value);
+            });
         }
     }
 }

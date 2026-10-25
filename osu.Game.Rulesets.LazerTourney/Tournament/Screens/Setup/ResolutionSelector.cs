@@ -2,65 +2,72 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using osu.Framework.Bindables;
 using osu.Framework.Graphics;
-using osu.Game.Graphics.UserInterface;
+using osu.Framework.Graphics.Containers;
+using osu.Game.Graphics.UserInterfaceV2;
+using osu.Game.Overlays.Settings;
+using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 {
-    internal partial class ResolutionSelector : ActionableInfo
+    internal partial class ResolutionSelector : CompositeDrawable
     {
         private const int minimum_window_height = 480;
         private const int maximum_window_height = 2160;
 
-        public new Action<int>? Action;
+        public Action<int>? Action;
 
-        private OsuEnterNumberBox? numberBox;
+        private readonly Bindable<string> height = new Bindable<string>("1080");
+        private readonly FormNumberBox numberBox;
 
-        protected override Drawable CreateComponent()
+        public ResolutionSelector()
         {
-            var drawable = base.CreateComponent();
-            FlowContainer.Insert(-1, numberBox = new OsuEnterNumberBox
+            RelativeSizeAxes = Axes.X;
+            AutoSizeAxes = Axes.Y;
+
+            InternalChild = new FillFlowContainer
             {
-                Text = "1080",
-                Width = 100,
-                onEnter = base.Action,
-            });
-
-            base.Action = () =>
-            {
-                if (string.IsNullOrEmpty(numberBox.Text))
-                    return;
-
-                // box contains text
-                if (!int.TryParse(numberBox.Text, out int number))
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Direction = FillDirection.Vertical,
+                Spacing = new Vector2(0, 4),
+                Children = new Drawable[]
                 {
-                    // at this point, the only reason we can arrive here is if the input number was too big to parse into an int
-                    // so clamp to max allowed value
-                    number = maximum_window_height;
-                }
-                else
-                {
-                    number = Math.Clamp(number, minimum_window_height, maximum_window_height);
-                }
-
-                // in case number got clamped, reset number in numberBox
-                numberBox.Text = number.ToString();
-
-                Action?.Invoke(number);
+                    new SettingsItemV2(numberBox = new FormNumberBox
+                    {
+                        Caption = "Window height",
+                        HintText = "Sets the window height and the minimum required width for the tournament layout.",
+                        Current = height,
+                    }),
+                    new SettingsButtonV2
+                    {
+                        Text = "Apply window height",
+                        Action = apply,
+                    },
+                },
             };
-            return drawable;
+
+            numberBox.OnCommit += (_, _) => apply();
         }
 
-        public partial class OsuEnterNumberBox : OsuTextBox
+        private void apply()
         {
-            public Action? onEnter = null;
+            if (string.IsNullOrEmpty(height.Value))
+                return;
 
-            protected override void OnTextCommitted(bool textChanged)
+            if (!int.TryParse(height.Value, out int number))
             {
-                base.OnTextCommitted(textChanged);
-                if (textChanged)
-                    onEnter?.Invoke();
+                // The only realistic failure here is an input too large to parse as an int.
+                number = maximum_window_height;
             }
+            else
+            {
+                number = Math.Clamp(number, minimum_window_height, maximum_window_height);
+            }
+
+            height.Value = number.ToString();
+            Action?.Invoke(number);
         }
     }
 }

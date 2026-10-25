@@ -68,6 +68,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
         private ModDisplay allowedDisplay = null!;
         private RoundedButton allowedButton = null!;
 
+        private readonly Bindable<string> multiplierRule = new Bindable<string>(string.Empty);
+
         private Ruleset? ruleset => ladder.Ruleset.Value?.CreateInstance();
 
         public RoundBeatmapModEditor(RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
@@ -179,8 +181,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
                             },
                         }
                     },
+                    new ModMultiplierRuleEditor
+                    {
+                        LabelText = "Mod multiplier rule (overrides round default)",
+                        EmptyHint = "Empty = use the round default rule.",
+                        Current = multiplierRule,
+                    },
                 }
             };
+
+            multiplierRule.Value = beatmap.ModMultiplierRule;
+            multiplierRule.BindValueChanged(rule => beatmap.ModMultiplierRule = rule.NewValue ?? string.Empty);
 
             freestyle.Value = beatmap.Freestyle;
             freestyle.BindValueChanged(v => onFreestyleChanged(v.NewValue));
@@ -195,7 +206,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
             requiredOverlay.State.BindValueChanged(v =>
             {
                 if (v.NewValue == Visibility.Hidden)
+                {
+                    // Commit on close: setting tweaks mutate the shared instances in place
+                    // without changing the SelectedMods list, so selection subscription alone misses them.
+                    // The row sits behind the open overlay, so deferring to close loses no visible feedback.
+                    if (editingRequired)
+                        commitRequired();
+
                     editingRequired = false;
+                }
             });
 
             allowedOverlay.SelectedMods.BindValueChanged(_ =>
@@ -206,7 +225,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
             allowedOverlay.State.BindValueChanged(v =>
             {
                 if (v.NewValue == Visibility.Hidden)
+                {
+                    if (editingAllowed)
+                        commitAllowed();
+
                     editingAllowed = false;
+                }
             });
 
             refreshDisplays();
@@ -248,7 +272,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
 
         private void commitRequired()
         {
-            beatmap.RequiredMods = requiredOverlay.SelectedMods.Value.Select(m => new APIMod(m)).ToArray();
+            APIMod[] selected = requiredOverlay.SelectedMods.Value.Select(m => new APIMod(m)).ToArray();
+
+            // APIMod has value equality: skip no-op closes so reopening the picker
+            // without changes neither rewrites the model nor retriggers stats work.
+            bool changed = !selected.SequenceEqual(beatmap.SafeRequiredMods);
+
+            if (changed)
+                beatmap.RequiredMods = selected;
+
             // Strip newly-conflicting free mods with the same gate as the allowed picker
             // (contained in required or incompatible with it): they can no longer be displayed,
             // so the user could never remove them manually afterwards.
@@ -257,10 +289,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
             Mod[] validAllowed = toMods(beatmap.SafeAllowedMods).Where(m => isValidAllowedMod(m, required)).ToArray();
 
             if (!validAllowed.Select(m => m.Acronym).SequenceEqual(beatmap.SafeAllowedMods.Select(a => a.Acronym)))
+            {
                 beatmap.AllowedMods = validAllowed.Select(m => new APIMod(m)).ToArray();
+                changed = true;
+            }
 
             refreshDisplays();
-            ModsChanged?.Invoke();
+
+            if (changed)
+                ModsChanged?.Invoke();
         }
 
         private void openAllowedEditor()
@@ -291,7 +328,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
 
         private void commitAllowed()
         {
-            beatmap.AllowedMods = allowedOverlay.SelectedMods.Value.Select(m => new APIMod(m)).ToArray();
+            APIMod[] selected = allowedOverlay.SelectedMods.Value.Select(m => new APIMod(m)).ToArray();
+
+            if (selected.SequenceEqual(beatmap.SafeAllowedMods))
+                return;
+
+            beatmap.AllowedMods = selected;
             refreshDisplays();
             ModsChanged?.Invoke();
         }

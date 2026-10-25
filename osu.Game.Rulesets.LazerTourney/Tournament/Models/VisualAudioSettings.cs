@@ -28,6 +28,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public bool StarFountains = true;
 
         // Audio
+        [DefaultValue(1d)]
+        public double VolumeInactive = 1;
+        [DefaultValue(0.6)]
+        public double MusicVolume = 0.6;
+        [DefaultValue(0.6)]
+        public double EffectVolume = 0.6;
+        [DefaultValue(0.6)]
+        public double HitsoundVolume = 0.6;
         [DefaultValue(0.2f)]
         public float PositionalHitsoundsLevel = 0.2f;
         [DefaultValue(true)]
