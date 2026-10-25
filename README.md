@@ -55,4 +55,4 @@ Remove `-c Release` for debug build.
 
 ## AI Usage Declaration
 
-[OpenCode](https://opencode.ai/) + [Muse Spark 1.3](https://dev.meta.ai/models/muse-spark).
+[OpenCode](https://opencode.ai/) + [Muse Spark 1.3](https://dev.meta.ai/models/muse-spark), [DeepSeek v4.1 Flash](https://www.deepseek.com/en/news/deepseek-v4-1-flash/).
