@@ -61,7 +61,7 @@ Side effects (`TournamentGame.load()`): forces windowed mode, shows the OS curso
 
 The `DialogOverlay` is added early (depth `float.MinValue`, in front of everything added later), and after `BracketLoadTask` completes `TournamentGame` runs `promptInvalidRoundBeatmaps` **before** constructing `TournamentSceneManager`: the round editor processes mappool entries eagerly and would otherwise crash. Each invalid entry gets one dialog (delete-and-continue long press / don't-delete-and-exit); dismissing the dialog counts as exit because `PopupDialog` auto-presses its last button. Only afterwards is `TournamentSceneManager` loaded.
 
-`HandlerExtension` (reflection over private fields/methods/types) and `DependencyContainerExtension` (reflection over the `DependencyContainer.cache`) under `ListenerLoader/Utils/` are legacy hack tools with **no remaining callers** (`SentryLoggerDisabler` now stops reporting via `SentrySdk.Close()`, and `TournamentParticipantsList` finds the team flag drawable directly) — **do not add new reflection hacks; check whether a legitimate `[Resolved]` or public API will do**.
+Reflection hacks are gone from the plugin: prefer a legitimate `[Resolved]` or public API instead of reaching for private members; ruleset-specific settings are bridged via `dynamic` (see §1). Test code is free to use reflection.
 
 ## 3. Global dependencies from `TournamentGameBase` (resolvable via `[Resolved]` in sub-screens)
 
