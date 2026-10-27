@@ -979,7 +979,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (syncManager.CurrentMasterTime > 0)
                     clock.Seek(syncManager.CurrentMasterTime);
 
-                var area = new TournamentPlayerArea(userId, clock)
+                var area = new TournamentPlayerArea(userId, clock, masterClock?.AdjustmentsFromMods)
                 {
                     // Per-player custom multiplier for the cell HUD and results, evaluated once:
                     // mods are locked once the match starts so one weight lasts the whole play.

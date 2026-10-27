@@ -89,14 +89,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
 
         private readonly AudioAdjustments clockAdjustmentsFromMods = new AudioAdjustments();
         private readonly BindableDouble volumeAdjustment = new BindableDouble();
+        private readonly IAggregateAudioAdjustment? masterAdjustments;
         private readonly Container gameplayContent;
         private readonly LoadingLayer loadingLayer;
         private OsuScreenStack? stack;
 
-        public TournamentPlayerArea(int userId, SpectatorPlayerClock clock)
+        public TournamentPlayerArea(int userId, SpectatorPlayerClock clock, IAggregateAudioAdjustment? masterAdjustments = null)
         {
             UserId = userId;
             SpectatorPlayerClock = clock;
+            this.masterAdjustments = masterAdjustments;
 
             RelativeSizeAxes = Axes.Both;
 
@@ -145,7 +147,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             // PlayerLoader's track mute/stop + entrance filters. Normal start / full reset use
             // the official loader to preserve the entrance blur/fade behaviour.
             SpectatorPlayerLoader loader = suppressAudioEffects
-                ? new TournamentSpectatorPlayerLoader(Score, () => createPlayer())
+                ? new TournamentSpectatorPlayerLoader(Score, () => createPlayer(), masterAdjustments)
                 : new MultiSpectatorPlayerLoader(Score, () => createPlayer());
 
             stack.Push(loader);
