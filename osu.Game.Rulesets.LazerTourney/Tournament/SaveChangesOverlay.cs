@@ -22,6 +22,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private TournamentGameBase tournamentGame { get; set; } = null!;
 
         private string? lastSerialisedLadder;
+
+        /// <summary>
+        /// Incremented whenever a save happens outside of this overlay, so an in-flight
+        /// change check doesn't compare against a stale baseline.
+        /// </summary>
+        private int serialisationGeneration;
+
         private readonly TourneyButton saveChangesButton;
 
         /// <summary>
@@ -69,12 +76,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         protected override void LoadComplete()
         {
             base.LoadComplete();
+            tournamentGame.Saved += onSaved;
             scheduleNextCheck();
         }
 
         private async Task checkForChanges()
         {
+            int generation = serialisationGeneration;
             string serialisedLadder = await Task.Run(() => tournamentGame.GetSerialisedLadder()).ConfigureAwait(true);
+
+            // A save landed while we were serialising; start over with the new baseline.
+            if (generation != serialisationGeneration)
+            {
+                scheduleNextCheck();
+                return;
+            }
 
             // If a save hasn't been triggered by the user yet, populate the initial value
             lastSerialisedLadder ??= serialisedLadder;
@@ -89,6 +105,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             }
 
             scheduleNextCheck();
+        }
+
+        /// <summary>
+        /// A save triggered outside of this overlay (e.g. before a ruleset-change restart)
+        /// makes the current state the new saved baseline.
+        /// </summary>
+        private void onSaved()
+        {
+            serialisationGeneration++;
+            lastSerialisedLadder = tournamentGame.GetSerialisedLadder();
+            markSaved();
         }
 
         public bool OnPressed(KeyBindingPressEvent<PlatformAction> e)
@@ -108,13 +135,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private void scheduleNextCheck() => Scheduler.AddDelayed(() => checkForChanges().FireAndForget(), 1000);
 
-        private void saveChanges()
-        {
-            tournamentGame.SaveChanges();
-            lastSerialisedLadder = tournamentGame.GetSerialisedLadder();
+        private void saveChanges() => tournamentGame.SaveChanges();
 
+        private void markSaved()
+        {
             saveChangesButton.Enabled.Value = false;
             saveChangesButton.Background.FadeColour(saveChangesButton.BackgroundColour, 500);
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            base.Dispose(isDisposing);
+
+            if (isDisposing)
+                tournamentGame.Saved -= onSaved;
         }
     }
 }

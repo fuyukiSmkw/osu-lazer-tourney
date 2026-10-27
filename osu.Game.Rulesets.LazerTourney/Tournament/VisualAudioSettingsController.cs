@@ -241,16 +241,45 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 foreach (var setting in section.Value)
                 {
-                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+                    switch (setting.Kind)
+                    {
+                        case RulesetSettingKind.Bool:
+                            Bindable<bool>? boolBindable = RulesetSettingDescriptors.GetBoolBindable(manager, setting);
 
-                    if (bindable == null)
-                        continue;
+                            if (boolBindable == null
+                                || setting.GetModelValue(defaults) is not bool defaultBool
+                                || setting.GetModelValue(effective) is not bool valueBool)
+                                break;
 
-                    backupBindable(bindable);
-                    RulesetSettingDescriptors.SetBindableDefault(bindable,
-                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(defaults)));
-                    RulesetSettingDescriptors.SetBindableValue(bindable,
-                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(effective)));
+                            backupBindable(boolBindable);
+                            boolBindable.Default = defaultBool;
+                            boolBindable.Value = valueBool;
+                            break;
+
+                        case RulesetSettingKind.Double:
+                            Bindable<double>? doubleBindable = RulesetSettingDescriptors.GetDoubleBindable(manager, setting);
+
+                            if (doubleBindable == null
+                                || setting.GetModelValue(defaults) is not double defaultDouble
+                                || setting.GetModelValue(effective) is not double valueDouble)
+                                break;
+
+                            backupBindable(doubleBindable);
+                            doubleBindable.Default = defaultDouble;
+                            doubleBindable.Value = valueDouble;
+                            break;
+
+                        case RulesetSettingKind.Enum:
+                            int? liveValue = RulesetSettingDescriptors.GetEnumModelValue(manager, setting);
+
+                            if (liveValue == null || setting.GetModelValue(effective) is not int valueEnum)
+                                break;
+
+                            int live = liveValue.Value;
+                            restoreActions.Add(() => RulesetSettingDescriptors.SetEnumModelValue(manager, setting, live));
+                            RulesetSettingDescriptors.SetEnumModelValue(manager, setting, valueEnum);
+                            break;
+                    }
                 }
             }
         }
@@ -269,32 +298,39 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 foreach (var setting in section.Value)
                 {
-                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+                    switch (setting.Kind)
+                    {
+                        case RulesetSettingKind.Bool:
+                            if (RulesetSettingDescriptors.GetBoolBindable(manager, setting) is Bindable<bool> boolBindable)
+                                setting.SetModelValue(target, boolBindable.Value);
+                            break;
 
-                    if (bindable == null)
-                        continue;
+                        case RulesetSettingKind.Double:
+                            if (RulesetSettingDescriptors.GetDoubleBindable(manager, setting) is Bindable<double> doubleBindable)
+                                setting.SetModelValue(target, doubleBindable.Value);
+                            break;
 
-                    object? modelValue = RulesetSettingDescriptors.ToModelValue(setting,
-                        RulesetSettingDescriptors.GetBindableValue(bindable));
-
-                    if (modelValue != null)
-                        setting.SetModelValue(target, modelValue);
+                        case RulesetSettingKind.Enum:
+                            if (RulesetSettingDescriptors.GetEnumModelValue(manager, setting) is int enumValue)
+                                setting.SetModelValue(target, enumValue);
+                            break;
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// Remembers a live bindable for restoration on exit. Captures only reflection
-        /// handles and boxed values, so the closure never binds foreign assemblies.
+        /// Remembers a live bindable for restoration on exit. Holds the weakly bound copy and
+        /// its values; nothing here names an official ruleset type.
         /// </summary>
-        private void backupBindable(object bindable)
+        private void backupBindable<T>(Bindable<T> bindable)
         {
-            object? value = RulesetSettingDescriptors.GetBindableValue(bindable);
-            object? defaultValue = RulesetSettingDescriptors.GetBindableDefault(bindable);
+            T value = bindable.Value;
+            T defaultValue = bindable.Default;
             restoreActions.Add(() =>
             {
-                RulesetSettingDescriptors.SetBindableDefault(bindable, defaultValue);
-                RulesetSettingDescriptors.SetBindableValue(bindable, value);
+                bindable.Default = defaultValue;
+                bindable.Value = value;
             });
         }
     }

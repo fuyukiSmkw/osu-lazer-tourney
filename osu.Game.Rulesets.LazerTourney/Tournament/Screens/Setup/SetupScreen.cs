@@ -261,14 +261,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                         Description = "In order to access the API and display metadata, signing in is required."
                     },
                     new TournamentSwitcher(),
-                    dropdown(
-                        "Ruleset",
-                        LadderInfo.Ruleset,
+                    new RulesetDropdown(
                         // OnlineID < 0 means local-only (e.g. custom rulesets): the server cannot resolve them in multiplayer rooms.
                         // This intentionally does not hardcode the official rulesets, so private servers with more rulesets keep working.
-                        rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0).Select(r => (RulesetInfo?)r),
-                        "Decides what stats are displayed and which ranks are retrieved for players. Only rulesets available online (usable in multiplayer rooms) are listed. This requires a restart to reload data for an existing bracket.",
-                        showRevertToDefaultButton: false),
+                        rulesets.AvailableRulesets.Where(r => r.OnlineID >= 0).Select(r => (RulesetInfo?)r)),
                     new ResolutionSelector
                     {
                         Action = applyResolution,
@@ -512,64 +508,73 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         /// <summary>
         /// Builds one control for a setting, or null when anything on the path is missing.
-        /// Enum dropdowns are constructed via reflection; no official ruleset type is named.
+        /// No official ruleset type is named; enums are resolved at runtime.
         /// </summary>
         private static Drawable? buildRulesetSettingControl(object manager, RulesetSettingDescriptor setting)
         {
-            object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
-
-            if (bindable == null)
-                return null;
-
             switch (setting.Kind)
             {
                 case RulesetSettingKind.Bool:
+                    Bindable<bool>? boolBindable = RulesetSettingDescriptors.GetBoolBindable(manager, setting);
+
+                    if (boolBindable == null)
+                        return null;
+
                     return new SettingsItemV2(new FormCheckBox
                     {
                         Caption = setting.Label,
-                        Current = (Bindable<bool>)bindable,
+                        Current = boolBindable,
                     });
 
                 case RulesetSettingKind.Double:
+                    Bindable<double>? doubleBindable = RulesetSettingDescriptors.GetDoubleBindable(manager, setting);
+
+                    if (doubleBindable == null)
+                        return null;
+
                     return new SettingsItemV2(new FormSliderBar<double>
                     {
                         Caption = setting.Label,
-                        Current = (Bindable<double>)bindable,
+                        Current = doubleBindable,
                         KeyboardStep = setting.SliderStep,
                     });
 
                 case RulesetSettingKind.Enum:
-                    return buildEnumDropdown(bindable, setting);
+                    return buildEnumDropdown(manager, setting);
 
                 default:
                     return null;
             }
         }
 
-        private static Drawable? buildEnumDropdown(object bindable, RulesetSettingDescriptor setting)
+        /// <summary>
+        /// Builds an enum dropdown from the descriptor's runtime-resolved enum type. The control
+        /// owns a local bindable (default = tournament model default) and writes through to the
+        /// ruleset config, so no live bindable of an unknown generic type is needed.
+        /// </summary>
+        private static Drawable? buildEnumDropdown(object manager, RulesetSettingDescriptor setting)
         {
-            Type? enumType = bindable.GetType().GetGenericArguments().FirstOrDefault();
+            Type? enumType = RulesetSettingDescriptors.GetEnumType(setting);
+            int? liveValue = RulesetSettingDescriptors.GetEnumModelValue(manager, setting);
+            object? modelDefault = setting.GetModelValue(new RulesetSettings());
 
-            if (enumType == null || !enumType.IsEnum)
+            if (enumType == null || liveValue == null || modelDefault == null)
                 return null;
 
-            Type dropdownType;
-            object dropdown;
-
-            try
+            var bindable = new Bindable<Enum>
             {
-                dropdownType = typeof(FormEnumDropdown<>).MakeGenericType(enumType);
-                dropdown = Activator.CreateInstance(dropdownType)!;
-            }
-            catch (ArgumentException)
+                Default = (Enum)Enum.ToObject(enumType, modelDefault),
+                Value = (Enum)Enum.ToObject(enumType, liveValue.Value),
+            };
+
+            bindable.BindValueChanged(e => RulesetSettingDescriptors.SetEnumModelValue(manager, setting, Convert.ToInt32(e.NewValue)));
+
+            return new SettingsItemV2(new FormDropdown<Enum>
             {
-                return null;
-            }
-
-            dropdownType.GetProperty("Caption")?.SetValue(dropdown, new LocalisableString(setting.Label));
-            dropdownType.GetProperty("Current")?.SetValue(dropdown, bindable);
-
-            return new SettingsItemV2((IFormControl)dropdown);
+                Caption = setting.Label,
+                Current = bindable,
+                Items = Enum.GetValues(enumType).Cast<Enum>(),
+            });
         }
 
         /// <summary>
@@ -823,18 +828,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 HintText = hintText(description),
                 Current = current,
             });
-
-        private static Drawable dropdown<T>(string caption, Bindable<T> current, IEnumerable<T> items, string? description = null, bool showRevertToDefaultButton = true)
-            => new SettingsItemV2(new FormDropdown<T>
-            {
-                Caption = caption,
-                HintText = hintText(description),
-                Items = items,
-                Current = current,
-            })
-            {
-                ShowRevertToDefaultButton = showRevertToDefaultButton,
-            };
 
         private static Drawable slider(string caption, Bindable<double> current, bool displayAsPercentage = true)
             => new SettingsItemV2(new FormSliderBar<double>

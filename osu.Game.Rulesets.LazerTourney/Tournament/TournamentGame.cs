@@ -16,6 +16,7 @@ using osu.Game.Graphics.Cursor;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Dialog;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
 {
@@ -110,6 +111,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 Margin = new MarginPadding(40),
             });
 
+            // Loaded up front (instead of with the tournament UI) so startup validation can prompt
+            // before any tournament screen is constructed. Dialogs must stay in front of everything
+            // added later, hence the explicit depth.
+            dialogOverlay.Depth = float.MinValue;
+            AddInternal(dialogOverlay);
+
             // in order to have the OS mouse cursor visible, relative mode needs to be disabled.
             // can potentially be removed when https://github.com/ppy/osu-framework/issues/4309 is resolved.
             var mouseHandler = host.AvailableInputHandlers.OfType<MouseHandler>().FirstOrDefault();
@@ -140,10 +147,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 saveChangesOverlay = new SaveChangesOverlay
                 {
-                    Depth = float.MinValue,
+                    // Above the tournament UI (depth 0), below the dialog overlay (float.MinValue).
+                    Depth = -1,
                 };
 
-                LoadComponentsAsync(new Drawable[]
+                promptInvalidRoundBeatmaps(() => LoadComponentsAsync(new Drawable[]
                 {
                     saveChangesOverlay,
                     heightWarning = new WarningBox("Please make the window wider")
@@ -157,7 +165,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                         RelativeSizeAxes = Axes.Both,
                         Child = sceneManager = new TournamentSceneManager()
                     },
-                    dialogOverlay
                 }, drawables =>
                 {
                     loadingSpinner.Hide();
@@ -177,8 +184,50 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                     }), true);
 
                     OverlayActivationMode.Value = OverlayActivation.UserTriggered; // hide toolbar
-                });
+                }));
             }));
+        }
+
+        /// <summary>
+        /// Prompts for every mappool entry the selected ruleset cannot process before any
+        /// tournament screen is built: the round editor processes mappool entries eagerly and
+        /// would otherwise crash during load. Deleting clears the beatmap data but keeps the
+        /// slot; declining (or dismissing) exits the plugin instead.
+        /// </summary>
+        private void promptInvalidRoundBeatmaps(Action onComplete)
+        {
+            InvalidRoundBeatmap[] invalid = InvalidRoundBeatmaps.ToArray();
+
+            if (invalid.Length == 0)
+            {
+                onComplete();
+                return;
+            }
+
+            showNext(0);
+
+            void showNext(int index)
+            {
+                if (index >= invalid.Length)
+                {
+                    onComplete();
+                    return;
+                }
+
+                InvalidRoundBeatmap entry = invalid[index];
+
+                dialogOverlay.Push(new InvalidBeatmapDialog(
+                    entry.DisplayName,
+                    entry.Round.Name.Value,
+                    entry.Reason,
+                    () =>
+                    {
+                        RoundBeatmapValidator.ClearBeatmapData(entry.Beatmap);
+                        SaveChanges();
+                        showNext(index + 1);
+                    },
+                    () => ExitTournament()));
+            }
         }
 
         protected override void LoadComplete()

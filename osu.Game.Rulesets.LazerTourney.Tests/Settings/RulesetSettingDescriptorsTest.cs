@@ -2,9 +2,12 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Linq;
 using NUnit.Framework;
+using osu.Game.Rulesets.Mania;
 using osu.Game.Rulesets.Mania.Configuration;
 using osu.Game.Rulesets.Mania.UI;
+using osu.Game.Rulesets.Osu;
 using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Taiko.Configuration;
 using osu.Game.Rulesets.UI;
@@ -67,6 +70,81 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Settings
             Assert.That(Enum.IsDefined(typeof(PlayfieldBorderStyle), defaults.Osu.PlayfieldBorderStyle));
             Assert.That(Enum.IsDefined(typeof(TaikoTouchControlScheme), defaults.Taiko.TouchControlScheme));
             Assert.That(Enum.IsDefined(typeof(ManiaScrollingDirection), defaults.Mania.ScrollDirection));
+        }
+
+        [Test]
+        public void BoolSettingReadsAndWritesLiveConfig()
+        {
+            var manager = new OsuRulesetConfigManager(null, new OsuRuleset().RulesetInfo);
+            var setting = RulesetSettingDescriptors.ForShortName("osu")!.Single(s => s.SettingName == nameof(OsuRulesetSetting.SnakingInSliders));
+
+            var bindable = RulesetSettingDescriptors.GetBoolBindable(manager, setting);
+            Assert.That(bindable, Is.Not.Null);
+
+            bool original = manager.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders).Value;
+
+            bindable!.Value = !original;
+
+            Assert.That(manager.GetBindable<bool>(OsuRulesetSetting.SnakingInSliders).Value, Is.EqualTo(!original));
+        }
+
+        [Test]
+        public void DoubleSettingReadsAndWritesLiveConfig()
+        {
+            var manager = new ManiaRulesetConfigManager(null, new ManiaRuleset().RulesetInfo);
+            var setting = RulesetSettingDescriptors.ForShortName("mania")!.Single(s => s.SettingName == nameof(ManiaRulesetSetting.ScrollSpeed));
+
+            var bindable = RulesetSettingDescriptors.GetDoubleBindable(manager, setting);
+            Assert.That(bindable, Is.Not.Null);
+
+            bindable!.Value = 12.5;
+
+            Assert.That(manager.GetBindable<double>(ManiaRulesetSetting.ScrollSpeed).Value, Is.EqualTo(12.5));
+        }
+
+        [Test]
+        public void EnumSettingReadsAndWritesModelValue()
+        {
+            var manager = new ManiaRulesetConfigManager(null, new ManiaRuleset().RulesetInfo);
+            var setting = RulesetSettingDescriptors.ForShortName("mania")!.Single(s => s.SettingName == nameof(ManiaRulesetSetting.ScrollDirection));
+
+            Assert.That(RulesetSettingDescriptors.GetEnumType(setting), Is.EqualTo(typeof(ManiaScrollingDirection)));
+            Assert.That(RulesetSettingDescriptors.GetEnumModelValue(manager, setting), Is.EqualTo((int)ManiaScrollingDirection.Down));
+
+            RulesetSettingDescriptors.SetEnumModelValue(manager, setting, (int)ManiaScrollingDirection.Up);
+
+            Assert.That(manager.GetBindable<ManiaScrollingDirection>(ManiaRulesetSetting.ScrollDirection).Value, Is.EqualTo(ManiaScrollingDirection.Up));
+            Assert.That(RulesetSettingDescriptors.GetEnumModelValue(manager, setting), Is.EqualTo((int)ManiaScrollingDirection.Up));
+        }
+
+        [Test]
+        public void MissingOrInvalidSettingsDegradeGracefully()
+        {
+            var manager = new OsuRulesetConfigManager(null, new OsuRuleset().RulesetInfo);
+
+            var missing = new RulesetSettingDescriptor
+            {
+                SettingName = "RenamedSetting",
+                Kind = RulesetSettingKind.Bool,
+            };
+
+            Assert.That(RulesetSettingDescriptors.GetBoolBindable(manager, missing), Is.Null);
+
+            var badEnumType = new RulesetSettingDescriptor
+            {
+                SettingName = nameof(OsuRulesetSetting.PlayfieldBorderStyle),
+                Kind = RulesetSettingKind.Enum,
+                ValueTypeName = "Does.Not.Exist",
+            };
+
+            Assert.That(RulesetSettingDescriptors.GetEnumType(badEnumType), Is.Null);
+            Assert.That(RulesetSettingDescriptors.GetEnumModelValue(manager, badEnumType), Is.Null);
+            Assert.DoesNotThrow(() => RulesetSettingDescriptors.SetEnumModelValue(manager, badEnumType, 0));
+
+            var wrongKind = RulesetSettingDescriptors.ForShortName("osu")!.Single(s => s.SettingName == nameof(OsuRulesetSetting.PlayfieldBorderStyle));
+
+            Assert.That(RulesetSettingDescriptors.GetBoolBindable(manager, wrongKind), Is.Null);
+            Assert.That(RulesetSettingDescriptors.GetDoubleBindable(manager, wrongKind), Is.Null);
         }
     }
 }
