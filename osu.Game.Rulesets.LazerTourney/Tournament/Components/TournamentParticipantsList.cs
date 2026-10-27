@@ -10,7 +10,6 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Testing;
 using osu.Game.Online.Multiplayer;
-using osu.Game.Rulesets.LazerTourney.ListenerLoader.Utils;
 using osu.Game.Screens.OnlinePlay.Multiplayer.Participants;
 using osu.Game.Users.Drawables;
 
@@ -140,11 +139,36 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
     /// </summary>
     public partial class TournamentParticipantPanel : ParticipantPanel
     {
+        private bool teamFlagHidden;
+
         protected override void LoadComplete()
         {
             base.LoadComplete();
             this.ChildrenOfType<UpdateableAvatar>()?.FirstOrDefault()?.Hide();
-            (this.FindInstance("teamFlagContainer") as Container)?.Hide();
+            hideTeamFlag();
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            // An empty slot only creates the team flag once a user is assigned to it,
+            // so the container may not exist yet at load time.
+            if (!teamFlagHidden)
+                hideTeamFlag();
+        }
+
+        private void hideTeamFlag()
+        {
+            // Hiding the containing drawable (rather than the flag itself) keeps the hidden state
+            // across the base class replacing the flag when the assigned user changes.
+            var teamFlag = this.ChildrenOfType<UpdateableTeamFlag>().FirstOrDefault();
+
+            if (teamFlag?.Parent == null)
+                return;
+
+            teamFlag.Parent.Hide();
+            teamFlagHidden = true;
         }
     }
 }

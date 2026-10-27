@@ -57,7 +57,7 @@ This plugin is a **single-process Screen** with 4 hops:
 
 Side effects (`TournamentGame.load()`): forces windowed mode, shows the OS cursor but hides the lazer cursor, narrows `NotificationOverlayToastTray` so it doesn't cover the stream area, hides the toolbar via `OverlayActivationMode = UserTriggered`. On exit/`Dispose`/Alt+F4 the visual/audio settings **must be restored** (see `VisualAudioSettingsController`).
 
-`HandlerExtension` (reflection over private fields/methods/types) and `DependencyContainerExtension` (reflection over the `DependencyContainer.cache`) under `ListenerLoader/Utils/` are fallback hack tools; the current main path only relies on the former idea, the latter is kept in reserve — **before adding a new hack, check whether a legitimate `[Resolved]` will do**.
+`HandlerExtension` (reflection over private fields/methods/types) and `DependencyContainerExtension` (reflection over the `DependencyContainer.cache`) under `ListenerLoader/Utils/` are legacy hack tools with **no remaining callers** (`SentryLoggerDisabler` now stops reporting via `SentrySdk.Close()`, and `TournamentParticipantsList` finds the team flag drawable directly) — **do not add new reflection hacks; check whether a legitimate `[Resolved]` or public API will do**.
 
 ## 3. Global dependencies from `TournamentGameBase` (resolvable via `[Resolved]` in sub-screens)
 
