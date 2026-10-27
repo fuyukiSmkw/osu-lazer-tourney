@@ -1,7 +1,5 @@
 using System;
-using osu.Framework.Allocation;
-using osu.Game.Utils;
-using osu.Game.Rulesets.LazerTourney.ListenerLoader.Utils;
+using Sentry;
 
 namespace osu.Game.Rulesets.LazerTourney.ListenerLoader.Handlers;
 
@@ -13,18 +11,22 @@ public partial class SentryLoggerDisabler : AbstractHandler
         {
             try
             {
-                disableSentryLogger();
+                disableSentry();
             }
             catch (Exception e)
             {
-                Logging.LogError(e, "Error disabling SentryLogger");
+                Logging.LogError(e, "Error disabling Sentry");
             }
         }, 100);
     }
 
-    private void disableSentryLogger()
+    /// <summary>
+    /// Stops the host game from reporting to Sentry. Closing the SDK is the public
+    /// equivalent of disposing lazer's internal <c>SentryLogger</c> and is a no-op
+    /// when Sentry was never initialised (tests, undeployed builds, reporting disabled).
+    /// </summary>
+    private void disableSentry()
     {
-        SentryLogger sl = (SentryLogger)Game.FindInstance(typeof(SentryLogger)) ?? throw new NullDependencyException("SentryLogger not found");
-        sl.Dispose();
+        SentrySdk.Close();
     }
 }
