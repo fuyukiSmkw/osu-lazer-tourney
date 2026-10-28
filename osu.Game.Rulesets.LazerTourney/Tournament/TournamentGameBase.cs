@@ -26,6 +26,7 @@ using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Screens;
+using osu.Game.Screens.Menu;
 using osu.Game.Screens.OnlinePlay;
 using osu.Game.Users;
 
@@ -45,6 +46,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private TournamentStorage storage = null!;
         private DependencyContainer dependencies = null!;
         private BeatmapLookupCache beatmapCache = null!;
+
+        [Resolved]
+        private OsuGame game { get; set; } = null!;
 
         [Resolved]
         private RulesetStore rulesetStore { get; set; } = null!;
@@ -83,7 +87,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// switcher and host exit requests.
         /// </summary>
         /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
-        public virtual void ExitTournament(Action? beforeExit = null)
+        /// <param name="restart">Whether restart after exit</param>
+        public virtual void ExitTournament(Action? beforeExit = null, bool restart = false)
         {
             // A second exit request while the first one is in flight would throw
             // ScreenNotCurrentException from ScreenStack.Exit. Settings restoration is also
@@ -93,6 +98,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             beforeExit?.Invoke();
             RestoreVisualAudioSettings();
+            if (restart)
+                game.PerformFromScreen(s => s.Push(new TournamentGame()), [typeof(MainMenu)]);
             this.Exit();
         }
 

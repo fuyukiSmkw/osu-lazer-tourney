@@ -23,6 +23,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
 
         protected TournamentConfigManager TournamentConfigManager { get; }
 
+        public void SaveIni() => TournamentConfigManager.SaveIni();
+
         public TournamentStorage(Storage storage)
             : base(storage.GetStorageForDirectory("tournaments-lazer"), string.Empty)
         {

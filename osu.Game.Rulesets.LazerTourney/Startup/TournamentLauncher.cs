@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using osu.Framework.Graphics;
 using osu.Framework.IO.Stores;
 using osu.Framework.Logging;
+using osu.Framework.Screens;
 using osu.Framework.Testing;
 using osu.Game.Overlays;
 using osu.Game.Rulesets.LazerTourney.Tournament;
@@ -64,7 +65,8 @@ public static class TournamentLauncher
 
         try
         {
-            game.ScreenStack.Push(new TournamentGame());
+            // game.ScreenStack.Push(new TournamentGame());
+            game.PerformFromScreen(s => s.Push(new TournamentGame()), [typeof(MainMenu)]);
         }
         catch (Exception e)
         {

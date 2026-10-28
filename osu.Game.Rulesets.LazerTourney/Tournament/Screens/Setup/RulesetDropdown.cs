@@ -78,7 +78,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                     {
                         ladderInfo.Ruleset.Value = requested;
                         tournamentGame?.SaveChanges();
-                        sceneManager?.ExitTournament();
+                        sceneManager?.ExitTournament(restart: true);
                     },
                     () =>
                     {

@@ -113,7 +113,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// and host exit requests. Unsaved bracket changes are handled by <see cref="TournamentGame"/>.
         /// </summary>
         /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
-        public void ExitTournament(Action? beforeExit = null) => tournamentGame?.ExitTournament(beforeExit);
+        /// <param name="restart">Whether restart after exit</param>
+        public void ExitTournament(Action? beforeExit = null, bool restart = false) => tournamentGame?.ExitTournament(beforeExit, restart);
 
         public TournamentSceneManager()
         {

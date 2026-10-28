@@ -15,7 +15,6 @@ using osu.Framework.Testing;
 using osu.Game.Graphics.Cursor;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
-using osu.Game.Overlays.Dialog;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
@@ -50,7 +49,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private bool exitConfirmed;
 
-        public override void ExitTournament(Action? beforeExit = null)
+        public override void ExitTournament(Action? beforeExit = null, bool restart = false)
         {
             if (!exitConfirmed && saveChangesOverlay?.HasUnsavedChanges == true)
             {
@@ -65,12 +64,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                     {
                         saveChangesOverlay.Save();
                         exitConfirmed = true;
-                        ExitTournament(beforeExit);
+                        ExitTournament(beforeExit, restart);
                     },
                     () =>
                     {
                         exitConfirmed = true;
-                        ExitTournament(beforeExit);
+                        ExitTournament(beforeExit, restart);
                     }));
 
                 return;
@@ -83,7 +82,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
             restoreToastTray();
 
-            base.ExitTournament(beforeExit);
+            base.ExitTournament(beforeExit, restart);
         }
 
         public override bool OnExiting(ScreenExitEvent e)
