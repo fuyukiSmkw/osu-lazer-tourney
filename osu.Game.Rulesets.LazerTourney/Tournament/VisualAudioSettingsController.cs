@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
 using osu.Game.Configuration;
@@ -24,6 +25,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
     {
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
+
+        [Resolved]
+        private FrameworkConfigManager frameworkConfig { get; set; } = null!;
 
         [Resolved]
         private AudioManager audio { get; set; } = null!;
@@ -90,6 +94,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 bindable.Value = value;
             }
 
+            void backupFramework<T>(FrameworkSetting setting)
+                => backupBindable(frameworkConfig.GetBindable<T>(setting));
+
+            void applyFramework<T>(FrameworkSetting setting, T value, T defaultValue)
+            {
+                var bindable = frameworkConfig.GetBindable<T>(setting);
+                bindable.Default = defaultValue;
+                bindable.Value = value;
+            }
+
             void backupAudio(BindableDouble bindable)
             {
                 double value = bindable.Value;
@@ -110,6 +124,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             backup<ScoringMode>(OsuSetting.ScoreDisplayMode);
             backup<bool>(OsuSetting.HitLighting);
             backup<bool>(OsuSetting.StarFountains);
+            backupFramework<bool>(FrameworkSetting.ShowUnicode);
+            backup<BackgroundSource>(OsuSetting.MenuBackgroundSource);
+            backup<SeasonalBackgroundMode>(OsuSetting.SeasonalBackgroundMode);
             backup<double>(OsuSetting.VolumeInactive);
             backupAudio(audio.VolumeTrack);
             backupAudio(audio.VolumeSample);
@@ -139,6 +156,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode, defaults.ScoreDisplayMode);
             apply(OsuSetting.HitLighting, effective.HitLighting, defaults.HitLighting);
             apply(OsuSetting.StarFountains, effective.StarFountains, defaults.StarFountains);
+            applyFramework(FrameworkSetting.ShowUnicode, effective.PreferMetadataInOriginalLanguage, defaults.PreferMetadataInOriginalLanguage);
+            apply(OsuSetting.MenuBackgroundSource, effective.MenuBackgroundSource, defaults.MenuBackgroundSource);
+            apply(OsuSetting.SeasonalBackgroundMode, effective.SeasonalBackgrounds, defaults.SeasonalBackgrounds);
             apply(OsuSetting.VolumeInactive, effective.VolumeInactive, defaults.VolumeInactive);
             applyAudio(audio.VolumeTrack, effective.MusicVolume, defaults.MusicVolume);
             applyAudio(audio.VolumeSample, effective.EffectVolume, defaults.EffectVolume);
@@ -183,6 +203,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             RestoreBackup();
             config.Save();
+            frameworkConfig.Save();
         }
 
         /// <summary>
@@ -196,6 +217,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             target.ScoreDisplayMode = get<ScoringMode>(OsuSetting.ScoreDisplayMode);
             target.HitLighting = get<bool>(OsuSetting.HitLighting);
             target.StarFountains = get<bool>(OsuSetting.StarFountains);
+            target.PreferMetadataInOriginalLanguage = frameworkConfig.GetBindable<bool>(FrameworkSetting.ShowUnicode).Value;
+            target.MenuBackgroundSource = get<BackgroundSource>(OsuSetting.MenuBackgroundSource);
+            target.SeasonalBackgrounds = get<SeasonalBackgroundMode>(OsuSetting.SeasonalBackgroundMode);
             target.VolumeInactive = get<double>(OsuSetting.VolumeInactive);
             target.MusicVolume = audio.VolumeTrack.Value;
             target.EffectVolume = audio.VolumeSample.Value;

@@ -290,6 +290,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                         "Automatically download missing beatmaps",
                         config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps),
                         "Mirrors lazer's Online setting: downloads beatmaps missing locally when joining rooms."),
+                    checkbox(
+                        "Prefer metadata in original language",
+                        frameworkConfig.GetBindable<bool>(FrameworkSetting.ShowUnicode)),
                     quitButton,
                 },
             };
@@ -350,6 +353,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 Children = new Drawable[]
                 {
                     new SettingsItemV2(skinDropdown),
+                    enumDropdown(
+                        "Background source",
+                        config.GetBindable<BackgroundSource>(OsuSetting.MenuBackgroundSource)),
+                    enumDropdown(
+                        "Seasonal backgrounds",
+                        config.GetBindable<SeasonalBackgroundMode>(OsuSetting.SeasonalBackgroundMode)),
                     subSection("Tourney settings",
                         enumDropdown(
                             "Result screen",
