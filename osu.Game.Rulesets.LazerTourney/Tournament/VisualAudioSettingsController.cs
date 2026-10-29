@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
 using osu.Framework.Bindables;
+using osu.Framework.Configuration;
 using osu.Framework.Graphics;
 using osu.Framework.Logging;
 using osu.Game.Configuration;
@@ -24,6 +25,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
     {
         [Resolved]
         private OsuConfigManager config { get; set; } = null!;
+
+        [Resolved]
+        private FrameworkConfigManager frameworkConfig { get; set; } = null!;
 
         [Resolved]
         private AudioManager audio { get; set; } = null!;
@@ -90,6 +94,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 bindable.Value = value;
             }
 
+            void backupFramework<T>(FrameworkSetting setting)
+                => backupBindable(frameworkConfig.GetBindable<T>(setting));
+
+            void applyFramework<T>(FrameworkSetting setting, T value, T defaultValue)
+            {
+                var bindable = frameworkConfig.GetBindable<T>(setting);
+                bindable.Default = defaultValue;
+                bindable.Value = value;
+            }
+
             void backupAudio(BindableDouble bindable)
             {
                 double value = bindable.Value;
@@ -110,6 +124,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             backup<ScoringMode>(OsuSetting.ScoreDisplayMode);
             backup<bool>(OsuSetting.HitLighting);
             backup<bool>(OsuSetting.StarFountains);
+            backupFramework<bool>(FrameworkSetting.ShowUnicode);
+            backup<BackgroundSource>(OsuSetting.MenuBackgroundSource);
+            backup<SeasonalBackgroundMode>(OsuSetting.SeasonalBackgroundMode);
             backup<double>(OsuSetting.VolumeInactive);
             backupAudio(audio.VolumeTrack);
             backupAudio(audio.VolumeSample);
@@ -139,6 +156,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             apply(OsuSetting.ScoreDisplayMode, effective.ScoreDisplayMode, defaults.ScoreDisplayMode);
             apply(OsuSetting.HitLighting, effective.HitLighting, defaults.HitLighting);
             apply(OsuSetting.StarFountains, effective.StarFountains, defaults.StarFountains);
+            applyFramework(FrameworkSetting.ShowUnicode, effective.PreferMetadataInOriginalLanguage, defaults.PreferMetadataInOriginalLanguage);
+            apply(OsuSetting.MenuBackgroundSource, effective.MenuBackgroundSource, defaults.MenuBackgroundSource);
+            apply(OsuSetting.SeasonalBackgroundMode, effective.SeasonalBackgrounds, defaults.SeasonalBackgrounds);
             apply(OsuSetting.VolumeInactive, effective.VolumeInactive, defaults.VolumeInactive);
             applyAudio(audio.VolumeTrack, effective.MusicVolume, defaults.MusicVolume);
             applyAudio(audio.VolumeSample, effective.EffectVolume, defaults.EffectVolume);
@@ -183,6 +203,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         {
             RestoreBackup();
             config.Save();
+            frameworkConfig.Save();
         }
 
         /// <summary>
@@ -196,6 +217,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             target.ScoreDisplayMode = get<ScoringMode>(OsuSetting.ScoreDisplayMode);
             target.HitLighting = get<bool>(OsuSetting.HitLighting);
             target.StarFountains = get<bool>(OsuSetting.StarFountains);
+            target.PreferMetadataInOriginalLanguage = frameworkConfig.GetBindable<bool>(FrameworkSetting.ShowUnicode).Value;
+            target.MenuBackgroundSource = get<BackgroundSource>(OsuSetting.MenuBackgroundSource);
+            target.SeasonalBackgrounds = get<SeasonalBackgroundMode>(OsuSetting.SeasonalBackgroundMode);
             target.VolumeInactive = get<double>(OsuSetting.VolumeInactive);
             target.MusicVolume = audio.VolumeTrack.Value;
             target.EffectVolume = audio.VolumeSample.Value;
@@ -241,16 +265,45 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 foreach (var setting in section.Value)
                 {
-                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+                    switch (setting.Kind)
+                    {
+                        case RulesetSettingKind.Bool:
+                            Bindable<bool>? boolBindable = RulesetSettingDescriptors.GetBoolBindable(manager, setting);
 
-                    if (bindable == null)
-                        continue;
+                            if (boolBindable == null
+                                || setting.GetModelValue(defaults) is not bool defaultBool
+                                || setting.GetModelValue(effective) is not bool valueBool)
+                                break;
 
-                    backupBindable(bindable);
-                    RulesetSettingDescriptors.SetBindableDefault(bindable,
-                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(defaults)));
-                    RulesetSettingDescriptors.SetBindableValue(bindable,
-                        RulesetSettingDescriptors.ToLiveValue(setting, bindable, setting.GetModelValue(effective)));
+                            backupBindable(boolBindable);
+                            boolBindable.Default = defaultBool;
+                            boolBindable.Value = valueBool;
+                            break;
+
+                        case RulesetSettingKind.Double:
+                            Bindable<double>? doubleBindable = RulesetSettingDescriptors.GetDoubleBindable(manager, setting);
+
+                            if (doubleBindable == null
+                                || setting.GetModelValue(defaults) is not double defaultDouble
+                                || setting.GetModelValue(effective) is not double valueDouble)
+                                break;
+
+                            backupBindable(doubleBindable);
+                            doubleBindable.Default = defaultDouble;
+                            doubleBindable.Value = valueDouble;
+                            break;
+
+                        case RulesetSettingKind.Enum:
+                            int? liveValue = RulesetSettingDescriptors.GetEnumModelValue(manager, setting);
+
+                            if (liveValue == null || setting.GetModelValue(effective) is not int valueEnum)
+                                break;
+
+                            int live = liveValue.Value;
+                            restoreActions.Add(() => RulesetSettingDescriptors.SetEnumModelValue(manager, setting, live));
+                            RulesetSettingDescriptors.SetEnumModelValue(manager, setting, valueEnum);
+                            break;
+                    }
                 }
             }
         }
@@ -269,32 +322,39 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
                 foreach (var setting in section.Value)
                 {
-                    object? bindable = RulesetSettingDescriptors.GetBindable(manager, setting);
+                    switch (setting.Kind)
+                    {
+                        case RulesetSettingKind.Bool:
+                            if (RulesetSettingDescriptors.GetBoolBindable(manager, setting) is Bindable<bool> boolBindable)
+                                setting.SetModelValue(target, boolBindable.Value);
+                            break;
 
-                    if (bindable == null)
-                        continue;
+                        case RulesetSettingKind.Double:
+                            if (RulesetSettingDescriptors.GetDoubleBindable(manager, setting) is Bindable<double> doubleBindable)
+                                setting.SetModelValue(target, doubleBindable.Value);
+                            break;
 
-                    object? modelValue = RulesetSettingDescriptors.ToModelValue(setting,
-                        RulesetSettingDescriptors.GetBindableValue(bindable));
-
-                    if (modelValue != null)
-                        setting.SetModelValue(target, modelValue);
+                        case RulesetSettingKind.Enum:
+                            if (RulesetSettingDescriptors.GetEnumModelValue(manager, setting) is int enumValue)
+                                setting.SetModelValue(target, enumValue);
+                            break;
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// Remembers a live bindable for restoration on exit. Captures only reflection
-        /// handles and boxed values, so the closure never binds foreign assemblies.
+        /// Remembers a live bindable for restoration on exit. Holds the weakly bound copy and
+        /// its values; nothing here names an official ruleset type.
         /// </summary>
-        private void backupBindable(object bindable)
+        private void backupBindable<T>(Bindable<T> bindable)
         {
-            object? value = RulesetSettingDescriptors.GetBindableValue(bindable);
-            object? defaultValue = RulesetSettingDescriptors.GetBindableDefault(bindable);
+            T value = bindable.Value;
+            T defaultValue = bindable.Default;
             restoreActions.Add(() =>
             {
-                RulesetSettingDescriptors.SetBindableDefault(bindable, defaultValue);
-                RulesetSettingDescriptors.SetBindableValue(bindable, value);
+                bindable.Default = defaultValue;
+                bindable.Value = value;
             });
         }
     }

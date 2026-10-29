@@ -29,6 +29,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private readonly Bindable<int> current;
         private readonly Bindable<string> text;
+        private readonly FormNumberBox numberBox;
 
         public PortTextBox(string caption, Bindable<int> current, string? description = null, bool showRevertToDefaultButton = true)
         {
@@ -46,8 +47,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             {
                 Default = defaultPort.ToString(CultureInfo.InvariantCulture),
             };
-
-            FormNumberBox numberBox;
 
             InternalChild = new SettingsItemV2(numberBox = new FormNumberBox
             {
@@ -67,19 +66,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
             // Normalise/recover after empty or out-of-range input.
             numberBox.OnCommit += (_, _) =>
             {
-                if (!text.Disabled)
+                if (!numberBox.ReadOnly)
                     text.Value = this.current.Value.ToString(CultureInfo.InvariantCulture);
             };
         }
 
         /// <summary>
-        /// Disables editing while keeping the current value visible.
+        /// Locks editing while keeping the current value visible.
         /// </summary>
+        /// <remarks>
+        /// This must not disable <see cref="text"/>: the inner text box is loaded lazily and its
+        /// <c>LoadComplete</c> writes the initial text back into <c>TextBox.Current</c>. A disabled
+        /// bindable would make that write throw ("Can not set value ... as bindable is disabled").
+        /// </remarks>
         public bool Disabled
         {
             set
             {
-                text.Disabled = value;
+                numberBox.ReadOnly = value;
 
                 if (!value)
                     text.Value = current.Value.ToString(CultureInfo.InvariantCulture);
@@ -88,6 +92,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void onTextChanged(ValueChangedEvent<string> e)
         {
+            if (numberBox.ReadOnly)
+                return;
+
             if (!TryParsePort(e.NewValue, out int port))
                 return;
 
@@ -96,7 +103,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
 
         private void onCurrentChanged(ValueChangedEvent<int> e)
         {
-            if (text.Disabled)
+            if (numberBox.ReadOnly)
                 return;
 
             string value = e.NewValue.ToString(CultureInfo.InvariantCulture);

@@ -101,8 +101,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Setup
                 string requestedTournament = v.NewValue;
 
                 dialogOverlay.Push(new ConfirmDialog(
-                    "Changing the current tournament requires a restart. Exit lazer!tourney now?",
-                    () => sceneManager?.ExitTournament(() => storage.CurrentTournament.Value = requestedTournament),
+                    "Changing the current tournament requires a restart. Restart lazer!tourney now?",
+                    () => sceneManager?.ExitTournament(() =>
+                    {
+                        storage.CurrentTournament.Value = requestedTournament;
+                        storage.SaveIni(); // Without this, the restarted tourney stays in the old tournament
+                    }, restart: true),
                     () =>
                     {
                         suppressSelectionChange = true;

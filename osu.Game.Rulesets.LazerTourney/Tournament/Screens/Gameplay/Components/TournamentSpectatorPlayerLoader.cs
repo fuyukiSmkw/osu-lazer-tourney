@@ -3,12 +3,10 @@
 
 using System;
 using System.Linq;
-using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
-using osu.Framework.Bindables;
+using osu.Framework.Audio.Track;
 using osu.Framework.Graphics;
-using osu.Framework.Logging;
 using osu.Framework.Screens;
 using osu.Game.Audio.Effects;
 using osu.Game.Scoring;
@@ -37,9 +35,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
     /// </remarks>
     public partial class TournamentSpectatorPlayerLoader : SpectatorPlayerLoader
     {
-        public TournamentSpectatorPlayerLoader(Score score, Func<TournamentSpectatorPlayer> createPlayer)
+        private readonly IAggregateAudioAdjustment? masterAdjustments;
+
+        public TournamentSpectatorPlayerLoader(Score score, Func<TournamentSpectatorPlayer> createPlayer, IAggregateAudioAdjustment? masterAdjustments)
             : base(score, createPlayer)
         {
+            this.masterAdjustments = masterAdjustments;
         }
 
         [BackgroundDependencyLoader]
@@ -61,11 +62,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
             base.OnEntering(e);
 
             // PlayerLoader attached its music-dimming adjustment to the shared track right before
-            // this. Detach it again so the fade-to-zero in the push sequence and PlayerLoader.OnSuspending
-            // cannot duck (or, combined with the suspend-time stop, permanently kill) the master clock's
-            // live audio. Everything below runs before the next update frame, so nothing is audible.
-            if (getLoaderVolumeAdjustment() is BindableDouble volumeAdjustment)
-                Beatmap.Value.Track.RemoveAdjustment(AdjustableProperty.Volume, volumeAdjustment);
+            // this. Drop every volume source instead of trying to identify that private bindable:
+            // RemoveAllAdjustments keeps the track's own volume, and the master clock's mod-driven
+            // volume is re-attached explicitly. The later fade-to-zero in the push sequence and
+            // PlayerLoader.OnSuspending/OnExiting removals then have nothing to act on, so they
+            // cannot duck (or, combined with the suspend-time stop, permanently kill) the master
+            // clock's live audio. Everything below runs before the next update frame.
+            ResetTrackVolume(Beatmap.Value.Track, masterAdjustments);
 
             // PlayerLoader.contentIn() adds low/high-pass filters to the global track mixer with cutoffs
             // animated in from their initial (passthrough) values. The filters only attach to the mixer
@@ -93,28 +96,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         }
 
         /// <summary>
-        /// Resolves <see cref="PlayerLoader"/>'s private track volume adjustment field once.
-        /// Nothing exposes it and a caller cannot remove it otherwise; a reflect miss (upstream rename)
-        /// degrades to the official dimming behaviour.
+        /// Removes every volume source from a shared track (including <see cref="PlayerLoader"/>'s
+        /// private dim adjustment) and re-attaches the master clock's mod-driven volume.
         /// </summary>
-        private static readonly FieldInfo? volumeAdjustmentField = resolveVolumeAdjustmentField();
-
-        private static FieldInfo? resolveVolumeAdjustmentField()
+        internal static void ResetTrackVolume(Track track, IAggregateAudioAdjustment? masterAdjustments)
         {
-            var field = typeof(PlayerLoader).GetField("volumeAdjustment", BindingFlags.Instance | BindingFlags.NonPublic);
+            track.RemoveAllAdjustments(AdjustableProperty.Volume);
 
-            if (field == null)
-                Logger.Log("PlayerLoader.volumeAdjustment not found via reflection; the spectate cell loader will fall back to the official music dimming behaviour.", LoggingTarget.Runtime, LogLevel.Debug);
-
-            return field;
-        }
-
-        private BindableDouble? getLoaderVolumeAdjustment()
-        {
-            if (volumeAdjustmentField == null)
-                return null;
-
-            return (BindableDouble?)volumeAdjustmentField.GetValue(this);
+            if (masterAdjustments != null)
+                track.AddAdjustment(AdjustableProperty.Volume, masterAdjustments.AggregateVolume);
         }
     }
 }

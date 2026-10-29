@@ -2,9 +2,10 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
+using Microsoft.CSharp.RuntimeBinder;
+using osu.Framework.Bindables;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
 {
@@ -52,9 +53,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
     }
 
     /// <summary>
-    /// The single source of truth for covered per-ruleset settings, plus the reflection
+    /// The single source of truth for covered per-ruleset settings, plus the dynamic
     /// helpers to read and write them without ever naming official ruleset types.
-    /// Enum types are always discovered at runtime (from live bindables), never referenced.
+    /// Enum types are always discovered at runtime (from <see cref="RulesetSettingDescriptor.ValueTypeName"/>), never referenced.
     /// </summary>
     public static class RulesetSettingDescriptors
     {
@@ -147,142 +148,118 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
             => shortName != null && Sections.TryGetValue(shortName, out var settings) ? settings : null;
 
         /// <summary>
-        /// Resolves the live bindable for a setting on a ruleset config manager, or null
+        /// Resolves the live bool bindable for a setting on a ruleset config manager, or null
         /// when anything on the path is missing (renamed setting, changed API, ...).
         /// </summary>
-        public static object? GetBindable(object manager, RulesetSettingDescriptor descriptor)
+        public static Bindable<bool>? GetBoolBindable(object manager, RulesetSettingDescriptor descriptor)
+            => descriptor.Kind == RulesetSettingKind.Bool ? getBindable<bool>(manager, descriptor) : null;
+
+        /// <summary>
+        /// Resolves the live double bindable for a setting, or null when unavailable.
+        /// </summary>
+        public static Bindable<double>? GetDoubleBindable(object manager, RulesetSettingDescriptor descriptor)
+            => descriptor.Kind == RulesetSettingKind.Double ? getBindable<double>(manager, descriptor) : null;
+
+        /// <summary>
+        /// Resolves the enum type backing a descriptor, or null when it cannot be loaded.
+        /// </summary>
+        public static Type? GetEnumType(RulesetSettingDescriptor descriptor)
         {
-            MethodInfo? method = manager.GetType().GetMethod("GetBindable", BindingFlags.Public | BindingFlags.Instance);
+            Type? type = descriptor.Kind == RulesetSettingKind.Enum && descriptor.ValueTypeName != null
+                ? Type.GetType(descriptor.ValueTypeName, false)
+                : null;
 
-            if (method == null)
+            return type is { IsEnum: true } ? type : null;
+        }
+
+        /// <summary>
+        /// Reads the current enum setting as its integer model value, or null when unavailable.
+        /// </summary>
+        public static int? GetEnumModelValue(object manager, RulesetSettingDescriptor descriptor)
+        {
+            Type? enumType = GetEnumType(descriptor);
+
+            if (enumType == null)
                 return null;
 
-            Type? valueType = getSettingValueType(descriptor);
+            var (_, text) = findLookupEntry(manager, descriptor);
 
-            if (valueType == null)
+            if (text == null || !Enum.TryParse(enumType, text, out object? value) || value == null)
                 return null;
 
-            object? key = parseLookupKey(manager, descriptor.SettingName);
+            return Convert.ToInt32(value);
+        }
+
+        /// <summary>
+        /// Writes an integer model value into the live enum setting.
+        /// </summary>
+        public static void SetEnumModelValue(object manager, RulesetSettingDescriptor descriptor, int value)
+        {
+            Type? enumType = GetEnumType(descriptor);
+
+            if (enumType == null)
+                return;
+
+            var (key, _) = findLookupEntry(manager, descriptor);
+
+            if (key == null)
+                return;
+
+            object boxed = Enum.ToObject(enumType, value);
+
+            try
+            {
+                ((dynamic)manager).SetValue((dynamic)key, (dynamic)boxed);
+            }
+            catch (Exception e) when (e is RuntimeBinderException or ArgumentException or InvalidCastException)
+            {
+            }
+        }
+
+        /// <summary>
+        /// Dynamically resolves a typed bindable without naming the manager's lookup enum type.
+        /// </summary>
+        private static Bindable<T>? getBindable<T>(object manager, RulesetSettingDescriptor descriptor)
+        {
+            var (key, _) = findLookupEntry(manager, descriptor);
 
             if (key == null)
                 return null;
 
             try
             {
-                return method.MakeGenericMethod(valueType).Invoke(manager, new[] { key });
+                return ((dynamic)manager).GetBindable<T>((dynamic)key);
             }
-            catch (ArgumentException)
+            catch (Exception e) when (e is RuntimeBinderException or ArgumentException or InvalidCastException)
             {
                 return null;
             }
         }
 
         /// <summary>
-        /// Reads the current value of a live bindable. Enum values arrive boxed as-is;
-        /// convert them with <see cref="ToModelValue"/>.
+        /// Finds the manager's lookup key for a descriptor by name, along with the current
+        /// value text (as used by the manager's own logging snapshot).
         /// </summary>
-        public static object? GetBindableValue(object bindable)
-            => bindable.GetType().GetProperty("Value")?.GetValue(bindable);
-
-        /// <summary>
-        /// Reads the default value of a live bindable, used to restore it after the tournament
-        /// replaces it with the model default.
-        /// </summary>
-        public static object? GetBindableDefault(object bindable)
-            => bindable.GetType().GetProperty("Default")?.GetValue(bindable);
-
-        /// <summary>
-        /// Writes a live value (as produced by <see cref="ToLiveValue"/>) into a bindable.
-        /// </summary>
-        public static void SetBindableValue(object bindable, object? value)
-            => bindable.GetType().GetProperty("Value")?.SetValue(bindable, value);
-
-        /// <summary>
-        /// Writes a default value into a bindable, so the settings reset button restores
-        /// the tournament model default rather than lazer's own setting default.
-        /// </summary>
-        public static void SetBindableDefault(object bindable, object? value)
-            => bindable.GetType().GetProperty("Default")?.SetValue(bindable, value);
-
-        /// <summary>
-        /// Converts a bracket model value (bool, double or int) into a live value for the
-        /// given bindable (enums arrive via their integer value).
-        /// </summary>
-        public static object? ToLiveValue(RulesetSettingDescriptor descriptor, object bindable, object? modelValue)
+        private static (object? key, string? text) findLookupEntry(object manager, RulesetSettingDescriptor descriptor)
         {
-            if (modelValue == null)
-                return null;
-
-            if (descriptor.Kind == RulesetSettingKind.Enum)
+            try
             {
-                Type? valueType = bindable.GetType().GetGenericArguments().FirstOrDefault();
-                return valueType == null ? null : Enum.ToObject(valueType, modelValue);
+                if (((dynamic)manager).GetCurrentConfigurationForLogging() is not IDictionary configuration)
+                    return (null, null);
+
+                foreach (DictionaryEntry entry in configuration)
+                {
+                    if (entry.Key?.ToString() != descriptor.SettingName)
+                        continue;
+
+                    return (entry.Key, entry.Value?.ToString());
+                }
+            }
+            catch (Exception e) when (e is RuntimeBinderException or ArgumentException or InvalidCastException)
+            {
             }
 
-            return modelValue;
-        }
-
-        /// <summary>
-        /// Converts a live bindable value into a bracket model value (enums become integers).
-        /// </summary>
-        public static object? ToModelValue(RulesetSettingDescriptor descriptor, object? liveValue)
-        {
-            if (liveValue == null)
-                return null;
-
-            if (descriptor.Kind == RulesetSettingKind.Enum)
-                return Convert.ToInt32(liveValue);
-
-            return liveValue;
-        }
-
-        /// <summary>
-        /// Discovers the bindable value type for a setting: primitives map directly,
-        /// value enums resolve by name (their assemblies are loaded whenever the manager is).
-        /// </summary>
-        private static Type? getSettingValueType(RulesetSettingDescriptor descriptor)
-        {
-            switch (descriptor.Kind)
-            {
-                case RulesetSettingKind.Bool:
-                    return typeof(bool);
-
-                case RulesetSettingKind.Double:
-                    return typeof(double);
-
-                case RulesetSettingKind.Enum:
-                    return descriptor.ValueTypeName == null ? null : Type.GetType(descriptor.ValueTypeName, false);
-
-                default:
-                    return null;
-            }
-        }
-
-        /// <summary>
-        /// Parses a lookup key (e.g. SnakingInSliders) on the manager's lookup enum type,
-        /// or null when the manager has no such setting (renamed API, ...).
-        /// </summary>
-        private static object? parseLookupKey(object manager, string settingName)
-        {
-            Type? lookupEnum = getLookupEnumType(manager);
-
-            if (lookupEnum?.GetField(settingName) == null)
-                return null;
-
-            return Enum.Parse(lookupEnum, settingName);
-        }
-
-        private static Type? getLookupEnumType(object manager)
-        {
-            // RulesetConfigManager<TLookup> sits somewhere up the hierarchy; its type
-            // argument is the lookup enum. Compared by name to avoid naming it statically.
-            for (Type? type = manager.GetType(); type != null; type = type.BaseType)
-            {
-                if (type.IsGenericType && type.GetGenericTypeDefinition().FullName == "osu.Game.Rulesets.Configuration.RulesetConfigManager`1")
-                    return type.GetGenericArguments()[0];
-            }
-
-            return null;
+            return (null, null);
         }
     }
 }

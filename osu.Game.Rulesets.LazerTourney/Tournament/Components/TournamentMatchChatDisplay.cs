@@ -3,7 +3,6 @@
 
 using System.ComponentModel;
 using System.Linq;
-using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -61,9 +60,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private long? lastRoomId;
         private int lastChannelId;
 
-        private static readonly FieldInfo? posting_text_box_field =
-            typeof(StandAloneChatDisplay).GetField("postingTextBox", BindingFlags.Instance | BindingFlags.NonPublic);
-
         private ChatTextBox textBox = null!;
         private TournamentChatCommandHandler? commandHandler;
 
@@ -103,8 +99,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             });
 
             textBox.OnCommit += postMessage;
-
-            posting_text_box_field?.SetValue(this, true);
         }
 
         protected override void LoadComplete()
@@ -236,14 +230,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             return new MatchMessage(message, ladderInfo);
         }
 
-        protected override StandAloneDrawableChannel CreateDrawableChannel(Channel channel) => new MatchChannel(channel);
+        protected override StandAloneDrawableChannel CreateDrawableChannel(Channel channel)
+            => new MatchChannel(channel, showTextBox ? text_box_height : 0);
 
         public partial class MatchChannel : StandAloneDrawableChannel
         {
-            public MatchChannel(Channel channel)
+            private readonly float bottomPadding;
+
+            public MatchChannel(Channel channel, float bottomPadding = 0)
                 : base(channel)
             {
+                this.bottomPadding = bottomPadding;
                 ScrollbarVisible = false;
+            }
+
+            protected override void LoadComplete()
+            {
+                base.LoadComplete();
+
+                // The base class derives the padding from its own (always disabled here) text box
+                // and applies it right after this channel is constructed, so reapply ours here
+                // to leave room for the tournament send box.
+                Padding = new MarginPadding { Bottom = bottomPadding };
             }
         }
 

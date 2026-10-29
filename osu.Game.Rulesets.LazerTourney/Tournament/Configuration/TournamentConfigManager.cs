@@ -30,6 +30,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
             SetDefault(StorageConfig.RefereeRefreshToken, string.Empty);
             SetDefault(StorageConfig.RefereeExpiresAt, 0L);
         }
+
+        public void SaveIni() => PerformSave();
     }
 
     public enum StorageConfig

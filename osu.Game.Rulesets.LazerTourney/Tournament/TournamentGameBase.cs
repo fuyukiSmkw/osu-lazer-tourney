@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,10 +21,12 @@ using osu.Game.Database;
 using osu.Game.Graphics;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests;
+using osu.Game.Rulesets;
 using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Screens;
+using osu.Game.Screens.Menu;
 using osu.Game.Screens.OnlinePlay;
 using osu.Game.Users;
 
@@ -45,6 +48,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private BeatmapLookupCache beatmapCache = null!;
 
         [Resolved]
+        private OsuGame game { get; set; } = null!;
+
+        [Resolved]
         private RulesetStore rulesetStore { get; set; } = null!;
 
         [Resolved]
@@ -60,6 +66,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         private readonly TaskCompletionSource<bool> bracketLoadTaskCompletionSource = new TaskCompletionSource<bool>();
 
+        /// <summary>
+        /// Mappool entries that the selected ruleset cannot process. Discovered while loading the
+        /// bracket (after beatmap population) and resolved by the host screen before any tournament
+        /// UI is built, because the round editor would otherwise crash on them.
+        /// </summary>
+        public IReadOnlyList<InvalidRoundBeatmap> InvalidRoundBeatmaps { get; private set; } = Array.Empty<InvalidRoundBeatmap>();
+
+        /// <summary>
+        /// Raised after a successful <see cref="SaveChanges"/> call, so observers tracking
+        /// unsaved changes can refresh their baseline.
+        /// </summary>
+        public event Action? Saved;
+
         public TournamentOnlineState OnlineState = null!;
         private VisualAudioSettingsController visualAudioSettings = null!;
 
@@ -68,10 +87,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         /// switcher and host exit requests.
         /// </summary>
         /// <param name="beforeExit">An action to perform once the exit has been confirmed.</param>
-        public virtual void ExitTournament(Action? beforeExit = null)
+        /// <param name="restart">Whether restart after exit</param>
+        public virtual void ExitTournament(Action? beforeExit = null, bool restart = false)
         {
+            // A second exit request while the first one is in flight would throw
+            // ScreenNotCurrentException from ScreenStack.Exit. Settings restoration is also
+            // covered by Dispose, so ignoring the duplicate is safe.
+            if (!this.IsCurrentScreen())
+                return;
+
             beforeExit?.Invoke();
             RestoreVisualAudioSettings();
+            if (restart)
+                game.PerformFromScreen(s => s.Push(new TournamentGame()), [typeof(MainMenu)]);
             this.Exit();
         }
 
@@ -234,6 +262,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
                 if (addedInfo)
                     saveChanges();
 
+                InvalidRoundBeatmaps = findInvalidRoundBeatmaps();
+
                 ladder.CurrentMatch.Value = ladder.Matches.FirstOrDefault(p => p.Current.Value);
 
                 ladder.Ruleset.BindValueChanged(r =>
@@ -360,6 +390,46 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             return changed;
         }
 
+        /// <summary>
+        /// Collects mappool entries the selected ruleset cannot process.
+        /// Called after beatmap population so stale or repopulated entries are judged correctly.
+        /// </summary>
+        private IReadOnlyList<InvalidRoundBeatmap> findInvalidRoundBeatmaps()
+        {
+            RulesetInfo? rulesetInfo = ladder.Ruleset.Value;
+
+            if (rulesetInfo == null)
+                return Array.Empty<InvalidRoundBeatmap>();
+
+            Ruleset? ruleset;
+
+            try
+            {
+                ruleset = rulesetInfo.CreateInstance();
+            }
+            catch (Exception e)
+            {
+                Logger.Error(e, $@"Couldn't create ruleset {rulesetInfo.ShortName} for mappool validation");
+                return Array.Empty<InvalidRoundBeatmap>();
+            }
+
+            if (ruleset == null)
+                return Array.Empty<InvalidRoundBeatmap>();
+
+            var invalid = new List<InvalidRoundBeatmap>();
+
+            foreach (TournamentRound round in ladder.Rounds)
+            {
+                foreach (RoundBeatmap beatmap in round.Beatmaps)
+                {
+                    if (RoundBeatmapValidator.TryGetInvalidReason(beatmap, ruleset, out string reason))
+                        invalid.Add(new InvalidRoundBeatmap(round, beatmap, RoundBeatmapValidator.Describe(beatmap), reason));
+                }
+            }
+
+            return invalid;
+        }
+
         private async Task<bool> addSeedingBeatmaps()
         {
             var beatmapsRequiringPopulation = ladder.Teams
@@ -434,6 +504,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             }
 
             saveChanges();
+            Saved?.Invoke();
         }
 
         private void saveChanges()

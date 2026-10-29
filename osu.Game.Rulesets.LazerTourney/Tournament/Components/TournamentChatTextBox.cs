@@ -4,10 +4,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics.UserInterface;
-using osu.Framework.Input.Bindings;
 using osu.Framework.Input.Events;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Input.Bindings;
@@ -29,39 +27,30 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         [Resolved(canBeNull: true)]
         private MultiplayerClient? multiplayerClient { get; set; }
 
-        private static readonly FieldInfo? selection_start_field =
-            typeof(TextBox).GetField("selectionStart", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        private static readonly FieldInfo? selection_end_field =
-            typeof(TextBox).GetField("selectionEnd", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        private Func<KeyDownEvent, bool> historyOnKeyDown = null;
-
-        // HistoryTextBox keeps its commit history in a private per-instance queue.
-        // Point every tournament send box at one shared queue so up/down recalls
-        // commits from any of them. Capacity matches the HistoryTextBox default.
-        // (Field name dependency on upstream; failure silently keeps per-box history.)
+        // HistoryTextBox keeps its commit history in a private per-instance queue,
+        // so every tournament send box uses this shared one instead. Capacity matches
+        // the HistoryTextBox default.
         private static readonly LimitedCapacityQueue<string> shared_history = new(100);
 
-        private static readonly FieldInfo? message_history_field =
-            typeof(HistoryTextBox).GetField("messageHistory", BindingFlags.Instance | BindingFlags.NonPublic);
+        private int historyIndex;
+        private string originalMessage = string.Empty;
 
         public TournamentChatTextBox()
         {
-            message_history_field?.SetValue(this, shared_history);
+            historyIndex = shared_history.Count;
 
-            nint ptr = typeof(HistoryTextBox).GetMethod("OnKeyDown", BindingFlags.InvokeMethod | BindingFlags.NonPublic | BindingFlags.Instance).MethodHandle.GetFunctionPointer();
-            historyOnKeyDown = (Func<KeyDownEvent, bool>)Activator.CreateInstance(typeof(Func<KeyDownEvent, bool>), this, ptr);
+            // Mirrors HistoryTextBox: editing a recalled entry drops back to the draft.
+            Current.ValueChanged += text =>
+            {
+                if (historyIndex != shared_history.Count && text.NewValue != shared_history[historyIndex])
+                    historyIndex = shared_history.Count;
+            };
         }
 
         // Pending multi-candidate completion: candidates stay fixed while cycling,
-        // the current one is selected from pendingStart on.
+        // the current one is kept selected.
         private List<string>? pendingCandidates;
         private int pendingIndex;
-        private int pendingStart;
-
-        private int selectionStart => (int?)selection_start_field?.GetValue(this) ?? 0;
-        private int selectionEnd => (int?)selection_end_field?.GetValue(this) ?? 0;
 
         /// <summary>
         /// Keep draft text on back (escape), matching regular text boxes.
@@ -95,7 +84,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             // Skip base(ChatTextBox).OnKeyDown because it returns false for up and down
             if (HasFocus && (e.Key == Key.Up || e.Key == Key.Down))
-                return historyOnKeyDown(e);
+                return handleHistoryKey(e);
 
             if (pendingCandidates != null)
             {
@@ -121,6 +110,56 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             base.OnFocusLost(e);
         }
 
+        protected override void Commit()
+        {
+            if (!string.IsNullOrEmpty(Text))
+                shared_history.Enqueue(Text);
+
+            historyIndex = shared_history.Count;
+
+            base.Commit();
+        }
+
+        /// <summary>
+        /// Mirrors <see cref="HistoryTextBox.OnKeyDown"/> against <see cref="shared_history"/>.
+        /// </summary>
+        private bool handleHistoryKey(KeyDownEvent e)
+        {
+            if (e.ControlPressed || e.AltPressed || e.SuperPressed || e.ShiftPressed)
+                return false;
+
+            switch (e.Key)
+            {
+                case Key.Up:
+                    if (historyIndex == 0)
+                        return true;
+
+                    if (historyIndex == shared_history.Count)
+                        originalMessage = Text;
+
+                    Text = shared_history[--historyIndex];
+
+                    return true;
+
+                case Key.Down:
+                    if (historyIndex == shared_history.Count)
+                        return true;
+
+                    if (historyIndex == shared_history.Count - 1)
+                    {
+                        historyIndex = shared_history.Count;
+                        Text = originalMessage;
+                        return true;
+                    }
+
+                    Text = shared_history[++historyIndex];
+
+                    return true;
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Focuses this box for slash-command entry (global <c>/</c> shortcut).
         /// Existing text is left untouched with the caret moved to the end;
@@ -140,24 +179,47 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         private void handleTab()
         {
+            if (ImeCompositionActive)
+            {
+                // Moving the selection is not safe during composition (the framework
+                // ignores it while textInput.ImeActive), so the caret probe would lie.
+                NotifyInputError();
+                return;
+            }
+
             if (validatePending())
             {
                 // Cycle to the next candidate. The set stays fixed while cycling.
-                string old = pendingCandidates![pendingIndex];
-                pendingIndex = (pendingIndex + 1) % pendingCandidates.Count;
-                replaceRange(pendingStart, pendingStart + old.Length, pendingCandidates[pendingIndex], true);
+                pendingIndex = (pendingIndex + 1) % pendingCandidates!.Count;
+                replaceRange(null, null, pendingCandidates[pendingIndex], true);
                 return;
             }
 
             var names = roomUsernames();
-            int start = Math.Min(selectionStart, selectionEnd);
-            int end = Math.Max(selectionStart, selectionEnd);
+            string selected = SelectedText;
 
-            if (start == end && Text.Length > 0 && Text[0] == '/')
+            if (selected.Length > 0)
+            {
+                // Case 3: complete from the selected text (spaces count as underscores).
+                selected = selected.Replace(' ', '_');
+
+                if (!selected.All(isNameChar))
+                {
+                    NotifyInputError();
+                    return;
+                }
+
+                completeFromPrefix(names, selected, null, null);
+                return;
+            }
+
+            int caret = getCaretPosition();
+
+            if (Text.Length > 0 && Text[0] == '/' && caret > 0)
             {
                 // Command completion: from the start of the string to the caret.
                 // Falls through to username completion when no command matches.
-                string head = Text.Substring(1, end - 1);
+                string head = Text.Substring(1, caret - 1);
 
                 if (!head.Contains(' '))
                 {
@@ -169,13 +231,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
                     if (commandMatches.Count == 1)
                     {
-                        replaceRange(1, end, commandMatches[0] + " ", false);
+                        replaceRange(1, caret, commandMatches[0] + " ", false);
                         return;
                     }
 
                     if (commandMatches.Count > 1)
                     {
-                        beginPending(commandMatches, 1, end, commandMatches[0]);
+                        beginPending(commandMatches, commandMatches[0], 1, caret);
                         return;
                     }
 
@@ -185,22 +247,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 // A space means the command may take a username argument: fall through to username completion.
             }
 
-            if (start != end)
-            {
-                // Case 3: complete from the selected text (spaces count as underscores).
-                string selected = SelectedText.Replace(' ', '_');
-
-                if (selected.Length == 0 || !selected.All(isNameChar))
-                {
-                    NotifyInputError();
-                    return;
-                }
-
-                completeFromPrefix(names, selected, start, end);
-                return;
-            }
-
-            int caret = end;
             string text = Text;
             int wordStart = caret;
 
@@ -216,7 +262,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                     return;
                 }
 
-                beginPending(names, caret, caret, names[0]);
+                beginPending(names, names[0], caret, caret);
                 return;
             }
 
@@ -224,7 +270,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             completeFromPrefix(names, text.Substring(wordStart, caret - wordStart), wordStart, caret);
         }
 
-        private void completeFromPrefix(List<string> names, string prefix, int start, int end)
+        private void completeFromPrefix(List<string> names, string prefix, int? start, int? end)
         {
             var matches = names.Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -240,21 +286,20 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 return;
             }
 
-            beginPending(matches, start, end, matches[0]);
+            beginPending(matches, matches[0], start, end);
         }
 
-        private void beginPending(List<string> candidates, int start, int end, string first)
+        private void beginPending(List<string> candidates, string first, int? start, int? end)
         {
             pendingCandidates = candidates;
             pendingIndex = 0;
-            pendingStart = start;
             replaceRange(start, end, first, true);
         }
 
         private void confirmPending()
         {
             string name = pendingCandidates![pendingIndex];
-            replaceRange(pendingStart, pendingStart + name.Length, name + " ", false);
+            replaceRange(null, null, name + " ", false);
             pendingCandidates = null;
         }
 
@@ -273,18 +318,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private bool validatePending()
         {
             if (pendingCandidates == null || pendingCandidates.Count == 0
-                || pendingIndex < 0 || pendingIndex >= pendingCandidates.Count
-                || pendingStart < 0 || pendingStart > Text.Length)
+                || pendingIndex < 0 || pendingIndex >= pendingCandidates.Count)
             {
                 pendingCandidates = null;
                 return false;
             }
 
-            string name = pendingCandidates[pendingIndex];
-
-            if (pendingStart + name.Length > Text.Length
-                || Text.Substring(pendingStart, name.Length) != name
-                || SelectedText != name)
+            if (SelectedText != pendingCandidates[pendingIndex])
             {
                 pendingCandidates = null;
                 return false;
@@ -293,18 +333,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             return true;
         }
 
-        private void replaceRange(int start, int end, string replacement, bool select)
+        /// <summary>
+        /// Replaces the current selection (or inserts at the caret when there is none).
+        /// <see cref="TextBox.InsertString"/> handles both cases, so the selection start
+        /// never needs to be read.
+        /// </summary>
+        private void replaceRange(int? start, int? end, string replacement, bool select)
         {
-            string text = Text;
-            start = Math.Clamp(start, 0, text.Length);
-            end = Math.Clamp(end, 0, text.Length);
+            if (start is int startIndex && end is int endIndex && startIndex != endIndex)
+                selectRange(startIndex, endIndex);
 
-            Text = text.Substring(0, start) + replacement + text.Substring(end);
+            InsertString(replacement);
 
-            if (select)
-                selectRange(start, start + replacement.Length);
-            else
-                moveCaretTo(start + replacement.Length);
+            if (!select)
+                return;
+
+            MoveCursorBy(-replacement.Length);
+            ExpandSelectionBy(replacement.Length);
         }
 
         private void selectRange(int a, int b)
@@ -324,6 +369,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 return;
 
             MoveCursorBy(position - Text.Length);
+        }
+
+        /// <summary>
+        /// Reads the caret position without reflection: collapse the selection to its active end,
+        /// select everything to the left of it and use the resulting selection length.
+        /// Must not be called while an IME composition is active.
+        /// </summary>
+        private int getCaretPosition()
+        {
+            MoveCursorBy(0);
+            ExpandSelectionBy(-Text.Length);
+
+            int caret = SelectedText.Length;
+
+            MoveCursorBy(caret);
+
+            return caret;
         }
 
         private List<string> roomUsernames()

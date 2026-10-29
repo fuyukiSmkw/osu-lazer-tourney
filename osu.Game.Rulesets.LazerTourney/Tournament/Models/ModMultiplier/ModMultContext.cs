@@ -4,9 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using osu.Framework.Bindables;
-using osu.Game.Configuration;
-using osu.Game.Extensions;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Scoring;
 
@@ -51,22 +48,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models.ModMultiplier
 
                 try
                 {
-                    // Note: Mod itself does not implement IConfiguredMod (only APIMod does),
-                    // so settings are read through the same public reflection path the APIMod constructor uses.
+                    // Mod implements IConfiguredMod, so its settings are readable through the
+                    // public interface (no internal API or reflection required).
                     if (mod is IConfiguredMod configured)
                     {
                         foreach (var pair in configured.Settings)
                             modSettings[NormaliseKey(pair.Key)] = toValue(pair.Value);
-                    }
-                    else
-                    {
-                        foreach ((_, var property) in mod.GetSettingsSourceProperties())
-                        {
-                            if (property.GetValue(mod) is not IBindable bindable)
-                                continue;
-
-                            modSettings[NormaliseKey(property.Name.ToSnakeCase())] = toValue(bindable.GetUnderlyingSettingValue());
-                        }
                     }
                 }
                 catch

@@ -26,6 +26,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         public bool HitLighting = true;
         [DefaultValue(true)]
         public bool StarFountains = true;
+        [DefaultValue(false)]
+        public bool PreferMetadataInOriginalLanguage = false;
+
+        // User interface
+        [DefaultValue(BackgroundSource.Skin)]
+        public BackgroundSource MenuBackgroundSource = BackgroundSource.Skin;
+        [DefaultValue(SeasonalBackgroundMode.Sometimes)]
+        public SeasonalBackgroundMode SeasonalBackgrounds = SeasonalBackgroundMode.Sometimes;
 
         // Audio
         [DefaultValue(1d)]
