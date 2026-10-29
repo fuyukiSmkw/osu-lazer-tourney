@@ -120,7 +120,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             // can potentially be removed when https://github.com/ppy/osu-framework/issues/4309 is resolved.
             var mouseHandler = host.AvailableInputHandlers.OfType<MouseHandler>().FirstOrDefault();
 
-            mouseHandler?.UseRelativeMode.Value = false;
+            // Background dependency loading can run off the update thread. UseRelativeMode is
+            // bound by the settings overlay's high-precision mouse SwitchButton, which is already
+            // loaded while the tournament is launched from settings, so mutate it via Schedule.
+            Schedule(() => mouseHandler?.UseRelativeMode.Value = false);
 
             // Disabling relative mode alone doesn't show the OS cursor: OsuGame hides it
             // at startup via CursorState.Hidden (lazer draws its own everywhere).
