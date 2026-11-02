@@ -117,6 +117,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly HashSet<int> passedUsers = new HashSet<int>();
 
         /// <summary>
+        /// Users whose local playback for the current match has fully finished
+        /// (results screen shown, failed, quit, or disconnected).
+        /// </summary>
+        private readonly HashSet<int> playbackFinishedUsers = new HashSet<int>();
+
+        /// <summary>
+        /// Whether any local playback has started for the current match. Gates
+        /// <see cref="IsPlaybackComplete"/> so an idle room never looks finished.
+        /// </summary>
+        private bool matchPlaybackStarted;
+
+        /// <summary>
+        /// Incremented once per match when its first local playback starts. Lets consumers
+        /// react once per match instead of once per score.
+        /// </summary>
+        private int matchPlaybackGeneration;
+
+        /// <summary>
         /// Playing-time mod snapshot per user, feeding provider weights. Unlike
         /// <see cref="global::osu.Game.Online.Spectator.SpectatorScoreProcessor.Mods"/>, this is taken
         /// from the final Playing state (same source as the cells) and never goes stale.
@@ -186,6 +204,63 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         /// Whether assignment is frozen (match in progress). Layout/count changes are ignored while frozen.
         /// </summary>
         public bool IsFrozen => multiplayerClient.Room is { State: MultiplayerRoomState.WaitingForLoad or MultiplayerRoomState.Playing };
+
+        /// <summary>
+        /// Whether any local playback has started for the current match.
+        /// </summary>
+        public bool HasStartedPlayback => matchPlaybackStarted;
+
+        /// <summary>
+        /// Increments once per match when the first local playback starts.
+        /// Consumers use this to run completion handling exactly once per match.
+        /// </summary>
+        public int MatchPlaybackGeneration => matchPlaybackGeneration;
+
+        /// <summary>
+        /// Whether the current match is fully over from the spectate point of view: local
+        /// playback has started, no player is still live (including players still loading),
+        /// and every local replay has finished (results shown, failed, quit or disconnected).
+        /// </summary>
+        /// <remarks>
+        /// Freestyle maps of different lengths finish at different times, so completion is
+        /// tracked per player rather than by the master clock.
+        /// </remarks>
+        public bool IsPlaybackComplete
+        {
+            get
+            {
+                if (!matchPlaybackStarted)
+                    return false;
+
+                var room = multiplayerClient.Room;
+
+                if (room == null)
+                    return false;
+
+                // A participant which has not finished the match cannot have a finished replay
+                // yet. Loading users are included so a slow loader cannot be skipped.
+                if (room.Users.Any(u => u.State is MultiplayerUserState.WaitingForLoad
+                                                   or MultiplayerUserState.Loaded
+                                                   or MultiplayerUserState.ReadyForGameplay
+                                                   or MultiplayerUserState.Playing))
+                    return false;
+
+                // Spectator state may lag behind room state, and a user still broadcasting
+                // gameplay may yet produce a local replay.
+                if (watchedUsers.Any(id => spectatorClient.WatchedUserStates.TryGetValue(id, out SpectatorState state)
+                                           && state.State == SpectatedUserState.Playing))
+                    return false;
+
+                // Every replay that started locally must have reached its end.
+                foreach (int userId in scoresByUser.Keys)
+                {
+                    if (!playbackFinishedUsers.Contains(userId))
+                        return false;
+                }
+
+                return true;
+            }
+        }
 
         /// <summary>
         /// Whether the current assignment produced team scores (team versus rooms only).
@@ -393,6 +468,23 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             var roomUserIds = room.Users.Select(u => u.UserID).ToHashSet();
             var assignedIds = redIds.Concat(blueIds).Where(id => id != null).Select(id => id!.Value).Where(roomUserIds.Contains).ToList();
 
+            // A retained owner who disconnected can never finish their local replay (no more
+            // frames arrive). Keep the last frame, but count the play as finished so match
+            // completion is not blocked forever, mirroring the Quit handling.
+            foreach (int retiredId in cellsByUser.Keys.Where(id => !roomUserIds.Contains(id)).ToList())
+            {
+                var retiredCell = cellsByUser[retiredId];
+
+                scoresByUser.Remove(retiredId);
+                passedUsers.Remove(retiredId);
+                removeClock(retiredId);
+
+                if (retiredCell.HasPlay)
+                    playbackFinishedUsers.Add(retiredId);
+            }
+
+            updateSpectatedScore();
+
             syncWatches(assignedIds);
             recreateScoreProvider(room, assignedIds);
 
@@ -575,6 +667,24 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 multiplayerClient.ChangeState(MultiplayerUserState.Spectating).FireAndForget();
 
             Assign(force: true);
+        }
+
+        /// <summary>
+        /// Resets spectate after <paramref name="delay"/> using the resident session scheduler,
+        /// so the reset still runs after the owning screen has been hidden (hidden subtrees do
+        /// not update). Skipped when a teardown/new match happened in the meantime.
+        /// </summary>
+        public void ResetSpectateAfter(double delay)
+        {
+            int generation = clockGeneration;
+
+            Scheduler.AddDelayed(() =>
+            {
+                if (generation != clockGeneration)
+                    return;
+
+                ResetSpectate();
+            }, delay);
         }
 
         /// <summary>
@@ -860,6 +970,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                         Logger.Log($"Spectated user {userId} passed without a local play; releasing clock "
                                    + $"(no results will be shown for this cell).");
                         removeClock(userId);
+                        playbackFinishedUsers.Add(userId);
                     }
 
                     break;
@@ -873,6 +984,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
                     scoresByUser.Remove(userId);
                     removeClock(userId);
+                    playbackFinishedUsers.Add(userId);
                     updateSpectatedScore();
                     break;
 
@@ -887,6 +999,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     scoresByUser.Remove(userId);
                     removeClock(userId);
                     stopWatching(userId);
+                    playbackFinishedUsers.Add(userId);
                     updateSpectatedScore();
 
                     if (cellsByUser.TryGetValue(userId, out SpectateCell? quitCell))
@@ -899,6 +1012,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         {
             // A fresh play replaces any completion tracking from a previous one.
             passedUsers.Remove(userId);
+            playbackFinishedUsers.Remove(userId);
 
             if (state.RulesetID == null || state.BeatmapID == null)
             {
@@ -975,6 +1089,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             scoresByUser[userId] = score;
             modsByUser[userId] = score.ScoreInfo.Mods;
+
+            // The first play of a match starts its completion tracking. Later plays in the
+            // same match keep the generation so completion is handled only once.
+            if (!matchPlaybackStarted)
+            {
+                matchPlaybackStarted = true;
+                matchPlaybackGeneration++;
+            }
+
             SpectatedItem ??= multiplayerClient.Room?.CurrentPlaylistItem.Clone();
             updateSpectatedScore();
 
@@ -1306,6 +1429,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             bool completed = area.ScoreProcessor?.HasCompleted.Value == true;
             double localTime = clockTime(userId);
 
+            // This user's local playback is over: results (and any storyboard outro) have
+            // been shown. Track it for match completion before releasing the clock.
+            playbackFinishedUsers.Add(userId);
+
             removeClock(userId);
 
             Logger.Log($"Spectated user {userId} reached results; released clock "
@@ -1606,6 +1733,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             clocksByUser.Clear();
             scoresByUser.Clear();
             passedUsers.Clear();
+            playbackFinishedUsers.Clear();
+            matchPlaybackStarted = false;
             modsByUser.Clear();
             SpectatedItem = null;
             updateSpectatedScore();

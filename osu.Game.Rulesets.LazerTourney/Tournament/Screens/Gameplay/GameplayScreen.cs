@@ -182,6 +182,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             State.BindValueChanged(_ => updateState(), true);
 
+            State.BindValueChanged(state =>
+            {
+                // A new match is taking over; drop any pending auto-advance from the
+                // previously finished one.
+                if (state.NewValue == TourneyState.WaitingForLoad)
+                    cancelAutoAdvance();
+            }, true);
+
             LadderInfo.PlayersPerTeam.BindValueChanged(count =>
             {
                 // Frozen mid-match: layout and assignment stay untouched to preserve
@@ -341,11 +349,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 return;
 
             warmup.Value = match.NewValue.Team1Score.Value + match.NewValue.Team2Score.Value == 0;
-            scheduledScreenChange?.Cancel();
+            cancelAutoAdvance();
         }
 
         private ScheduledDelegate? scheduledScreenChange;
-        private ScheduledDelegate? scheduledContract;
+        private ScheduledDelegate? scheduledAutoAdvance;
+        private bool autoAdvanceActive;
+        private int handledMatchGeneration;
 
         /// <summary>
         /// Awards the current match point to the side with the higher live team total.
@@ -372,15 +382,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private TournamentMatchScoreDisplay scoreDisplay = null!;
 
-        private TourneyState lastState;
         private MatchHeader header = null!;
 
         private void contract()
         {
             if (!IsLoaded)
                 return;
-
-            scheduledContract?.Cancel();
 
             SongBar.Expanded = false;
             scoreDisplay.FadeOut(100);
@@ -392,8 +399,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         {
             if (!IsLoaded)
                 return;
-
-            scheduledContract?.Cancel();
 
             chat.Contract();
 
@@ -411,60 +416,126 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private void updateState()
         {
-            try
+            if (State.Value == TourneyState.Idle)
+                contract();
+            else
+                expand();
+        }
+
+        protected override void Update()
+        {
+            base.Update();
+
+            // A manual reset (or a new match's teardown) invalidates the completed playback
+            // the pending sequence was started for.
+            if (autoAdvanceActive)
             {
-                scheduledScreenChange?.Cancel();
-
-                if (State.Value == TourneyState.Ranking)
-                {
-                    if (warmup.Value || CurrentMatch.Value == null) return;
-
-                    // Award once, on entering ranking: the side with the higher live total takes the point.
-                    // Ties are left for the referee to decide manually.
-                    if (lastState != TourneyState.Ranking)
-                        awardMatchPoint();
-                }
-
-                switch (State.Value)
-                {
-                    case TourneyState.Idle:
-                        contract();
-
-                        if (LadderInfo.AutoProgressScreens.Value)
-                        {
-                            const float delay_before_progression = 4000;
-
-                            // if we've returned to idle and the last screen was ranking
-                            // we should automatically proceed after a short delay
-                            if (lastState == TourneyState.Ranking && !warmup.Value)
-                            {
-                                if (CurrentMatch.Value?.Completed.Value == true)
-                                    scheduledScreenChange = Scheduler.AddDelayed(() => { sceneManager?.SetScreen(typeof(TeamWinScreen)); }, delay_before_progression);
-                                else if (CurrentMatch.Value?.Completed.Value == false)
-                                    scheduledScreenChange = Scheduler.AddDelayed(() => { sceneManager?.SetScreen(typeof(MapPoolScreen)); }, delay_before_progression);
-                            }
-                        }
-
-                        break;
-
-                    case TourneyState.Ranking:
-                        scheduledContract = Scheduler.AddDelayed(contract, 10000);
-                        break;
-
-                    default:
-                        expand();
-                        break;
-                }
+                if (!spectateSession.HasStartedPlayback
+                    || spectateSession.MatchPlaybackGeneration != handledMatchGeneration)
+                    cancelAutoAdvance();
             }
-            finally
+
+            checkMatchCompletion();
+        }
+
+        /// <summary>
+        /// Starts the auto-advance sequence once the spectated match has fully ended:
+        /// award the point immediately, reveal chat after 5 seconds and move to the map pool
+        /// after another 5 seconds. Runs at most once per match.
+        /// </summary>
+        private void checkMatchCompletion()
+        {
+            if (autoAdvanceActive)
+                return;
+
+            if (!LadderInfo.AutoProgressScreens.Value)
+                return;
+
+            // Warmups and matches without a bracket entry never award or advance.
+            if (warmup.Value || CurrentMatch.Value == null)
+                return;
+
+            if (spectateSession.MatchPlaybackGeneration == handledMatchGeneration)
+                return;
+
+            if (!spectateSession.IsPlaybackComplete)
+                return;
+
+            handledMatchGeneration = spectateSession.MatchPlaybackGeneration;
+            beginMatchCompletionSequence();
+        }
+
+        private void beginMatchCompletionSequence()
+        {
+            autoAdvanceActive = true;
+
+            // Award now, while the results are still on screen.
+            awardMatchPoint();
+
+            const double delay_before_chat = 5000;
+            const double delay_before_screen_change = 5000;
+
+            scheduledAutoAdvance = Scheduler.AddDelayed(() =>
             {
-                lastState = State.Value;
-            }
+                if (!autoAdvanceActive)
+                    return;
+
+                // Revealing the full-width chat also contracts the in-match layout.
+                showChat.Value = true;
+
+                scheduledScreenChange = Scheduler.AddDelayed(() =>
+                {
+                    if (!autoAdvanceActive)
+                        return;
+
+                    autoAdvanceActive = false;
+
+                    // A match won by either side moves on to the win screen; otherwise
+                    // return to the pool for the next pick.
+                    sceneManager?.SetScreen(currentMatchWon() ? typeof(TeamWinScreen) : typeof(MapPoolScreen));
+
+                    // Keep the finished cells visible through the crossfade. The gameplay
+                    // screen stops updating once hidden, so the resident session schedules
+                    // the reset itself.
+                    spectateSession.ResetSpectateAfter(TournamentScreen.FADE_DELAY * 3);
+                }, delay_before_screen_change);
+            }, delay_before_chat);
+        }
+
+        private void cancelAutoAdvance()
+        {
+            autoAdvanceActive = false;
+            scheduledAutoAdvance?.Cancel();
+            scheduledScreenChange?.Cancel();
+        }
+
+        /// <summary>
+        /// Whether the current match has been won: either team reached the points needed for
+        /// the round, or the match was completed manually in the bracket editor.
+        /// </summary>
+        private bool currentMatchWon()
+        {
+            var match = CurrentMatch.Value;
+
+            if (match == null)
+                return false;
+
+            if (match.Completed.Value)
+                return true;
+
+            int bestOf = match.Round.Value?.BestOf.Value ?? 0;
+
+            if (bestOf <= 0)
+                return false;
+
+            int pointsToWin = bestOf / 2 + 1;
+
+            return (match.Team1Score.Value ?? 0) >= pointsToWin || (match.Team2Score.Value ?? 0) >= pointsToWin;
         }
 
         public override void Hide()
         {
-            scheduledScreenChange?.Cancel();
+            cancelAutoAdvance();
             spectateSession.SetGameplayVisible(false);
             base.Hide();
         }
