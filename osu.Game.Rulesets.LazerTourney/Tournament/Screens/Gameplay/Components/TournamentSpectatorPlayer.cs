@@ -51,9 +51,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// </summary>
         public GameplayState GameplayStatePublic => GameplayState;
 
+        private readonly SpectatorPlayerClock spectatorPlayerClock;
+
         public TournamentSpectatorPlayer(Score score, SpectatorPlayerClock clock)
             : base(score, clock)
         {
+            spectatorPlayerClock = clock;
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            // The base class keeps an empty replay waiting forever. That is correct while frames are
+            // still streaming in, but once the live player passed there is nothing left to receive:
+            // waiting would freeze the clock before the map end and suppress the results screen.
+            spectatorPlayerClock.WaitingOnFrames = SpectatorFrameWait.ShouldWait(
+                DrawableRuleset.FrameStableClock.WaitingOnFrames.Value,
+                Score.Replay.Frames.Count,
+                Score.Replay.HasReceivedAllFrames);
         }
 
         [Resolved]

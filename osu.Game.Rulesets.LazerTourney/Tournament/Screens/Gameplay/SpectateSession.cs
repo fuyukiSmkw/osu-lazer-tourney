@@ -98,6 +98,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private readonly Dictionary<int, Score> scoresByUser = new Dictionary<int, Score>();
 
         /// <summary>
+        /// Users whose live play has passed, but whose local replay is still playing.
+        /// Their clocks stay managed until the local player reaches its results screen.
+        /// </summary>
+        /// <remarks>
+        /// Official <see cref="MultiSpectatorScreen"/> releases the clock as soon as the live user
+        /// passes. That is only safe when local playback is in sync with live: local playback is
+        /// intentionally behind live (initial load delay, catch-up capped at
+        /// <see cref="SpectatorPlayerClock.CATCHUP_RATE"/>), so releasing the clock freezes the
+        /// cell before the last hit object. <see cref="osu.Game.Rulesets.Scoring.JudgementProcessor.HasCompleted"/>
+        /// then never becomes true and the cell never shows results. Keeping the clock lets the replay play
+        /// out to the end; <see cref="releaseClockAtResults"/> releases it afterwards.
+        /// <para>
+        /// Only used for diagnostics: the clock is released when the local player shows results
+        /// regardless of whether the live user already passed (gameplay is over at that point).
+        /// </para>
+        /// </remarks>
+        private readonly HashSet<int> passedUsers = new HashSet<int>();
+
+        /// <summary>
         /// Playing-time mod snapshot per user, feeding provider weights. Unlike
         /// <see cref="global::osu.Game.Online.Spectator.SpectatorScoreProcessor.Mods"/>, this is taken
         /// from the final Playing state (same source as the cells) and never goes stale.
@@ -582,6 +601,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             // Tear down THIS player only
             stopWatching(userId);
             removeClock(userId);
+            passedUsers.Remove(userId);
             cell.ClearPlay();
             scoresByUser.Remove(userId);
             // NOTE: keep modsByUser[userId] — mods are locked at match start, reuse for weight
@@ -820,16 +840,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     break;
 
                 case SpectatedUserState.Passed:
-                    // Keep the score for the results screen, only release the clock.
-                    // Matches SpectatorScreen.Passed + MultiSpectatorScreen.PassGameplay.
+                    // Keep the score for the results screen and keep the clock running until the
+                    // local replay reaches its end. Removing the clock here (official behaviour)
+                    // freezes the cell at the live finish time; after a slow load the local
+                    // playback is still behind live, so it would never judge the remaining hit
+                    // objects and never show results.
                     if (scoresByUser.TryGetValue(userId, out Score? passedScore))
+                    {
                         passedScore.Replay.HasReceivedAllFrames = true;
+                        passedUsers.Add(userId);
 
-                    removeClock(userId);
+                        Logger.Log($"Spectated user {userId} passed; keeping clock until local playback finishes "
+                                   + $"(frames {passedScore.Replay.Frames.Count}, local clock {clockTime(userId):N0}ms, master {masterTime():N0}ms).");
+                    }
+                    else
+                    {
+                        // No local play (e.g. the player passed before its score was created):
+                        // there is nothing to finish, so release the clock as before.
+                        Logger.Log($"Spectated user {userId} passed without a local play; releasing clock "
+                                   + $"(no results will be shown for this cell).");
+                        removeClock(userId);
+                    }
+
                     break;
 
                 case SpectatedUserState.Failed:
                     // Stop at the fail frame without results, matching MultiSpectatorScreen.FailGameplay.
+                    passedUsers.Remove(userId);
+
                     if (scoresByUser.TryGetValue(userId, out Score? failedScore))
                         failedScore.Replay.HasReceivedAllFrames = true;
 
@@ -841,6 +879,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 case SpectatedUserState.Quit:
                     // Keep the last frame greyed out until the next match or reset,
                     // matching MultiSpectatorScreen.QuitGameplay.
+                    passedUsers.Remove(userId);
+
                     if (scoresByUser.TryGetValue(userId, out Score? quitScore))
                         quitScore.Replay.HasReceivedAllFrames = true;
 
@@ -857,6 +897,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
         private void startGameplay(int userId, SpectatorState state)
         {
+            // A fresh play replaces any completion tracking from a previous one.
+            passedUsers.Remove(userId);
+
             if (state.RulesetID == null || state.BeatmapID == null)
             {
                 Logger.Log($"Skipping spectate start for user {userId}: missing ruleset or beatmap ID.", LoggingTarget.Runtime, LogLevel.Verbose);
@@ -979,6 +1022,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 if (syncManager.CurrentMasterTime > 0)
                     clock.Seek(syncManager.CurrentMasterTime);
 
+                Logger.Log($"Attaching spectate player for user {userId}: master {syncManager.CurrentMasterTime:N0}ms, "
+                           + $"frames {playScore.Replay.Frames.Count}, allFrames {playScore.Replay.HasReceivedAllFrames}.");
+
                 var area = new TournamentPlayerArea(userId, clock, masterClock?.AdjustmentsFromMods)
                 {
                     // Per-player custom multiplier for the cell HUD and results, evaluated once:
@@ -989,6 +1035,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
                 clocksByUser[userId] = clock;
                 cell.AttachPlayArea(area);
+
+                // The clock must keep running until the local replay has played out. Release it
+                // only when the player actually shows results; releasing at the live pass time
+                // freezes delayed playback before the last hit object (see passedUsers).
+                area.OnResultsShown += () => Schedule(() => releaseClockAtResults(userId, area));
 
                 // Re-assign the cell's label so the username stays visible across resets.
                 // The userMap is populated from room users in startGameplay's guard chain.
@@ -1201,7 +1252,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             double mean = startTimes.Average();
             startTimes.RemoveAll(t => mean - t > 1000);
 
-            masterClock.Reset(startTimes.Min(), true);
+            double anchor = startTimes.Min();
+            masterClock.Reset(anchor, true);
+
+            Logger.Log($"Spectate initial seek: anchor {anchor:N0}ms "
+                       + $"(candidates {string.Join(", ", startTimes.Select(t => $"{t:N0}ms"))}), master now {masterClock.CurrentTime:N0}ms.");
 
             // Prime every managed clock across the anchor jump. The master's track just
             // teleported (e.g. from the preview position to live), leaving a one-frame huge
@@ -1233,6 +1288,37 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         /// <summary>
+        /// Releases a user's clock once their local player shows results.
+        /// Until then the clock must keep running: the local replay is behind live, and both the
+        /// remaining hit objects and any storyboard outro need the clock to advance past the end.
+        /// </summary>
+        private void releaseClockAtResults(int userId, TournamentPlayerArea area)
+        {
+            // The cell may have been reassigned/rebuilt while the results transition was queued.
+            if (!cellsByUser.TryGetValue(userId, out SpectateCell? cell) || !ReferenceEquals(cell.PlayArea, area))
+                return;
+
+            // Removing the clock is safe whenever this player's own results are showing (gameplay
+            // and any storyboard outro are over). passedUsers only records whether the live user
+            // had already passed, for diagnostics: the Passed state may also arrive after results.
+            bool wasPassed = passedUsers.Remove(userId);
+
+            bool completed = area.ScoreProcessor?.HasCompleted.Value == true;
+            double localTime = clockTime(userId);
+
+            removeClock(userId);
+
+            Logger.Log($"Spectated user {userId} reached results; released clock "
+                       + $"(passed {wasPassed}, completed {completed}, local clock {localTime:N0}ms, master {masterTime():N0}ms).");
+        }
+
+        private double clockTime(int userId)
+            => clocksByUser.TryGetValue(userId, out SpectatorPlayerClock? clock) ? clock.CurrentTime : 0;
+
+        private double masterTime()
+            => syncManager?.CurrentMasterTime ?? 0;
+
+        /// <summary>
         /// Advances player clocks that the official gameplay containers are not driving.
         /// Hidden subtrees skip updates (see CompositeDrawable.UpdateSubTree), which would freeze
         /// player clocks against the real-time master track: the master would stall as too far ahead
@@ -1255,9 +1341,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                 // While hidden, frame arrival does not refresh the player's waiting flag
                 // (it is recomputed in the player's UpdateAfterChildren). Refresh from received
                 // frames so a stale wait does not freeze the clock: a spuriously running clock
-                // parks ahead harmlessly and re-syncs on its own.
+                // parks ahead harmlessly and re-syncs on its own. A replay that has received all
+                // frames must never wait, even when it is empty (the player may have passed
+                // before any bundle arrived); otherwise it would stay frozen forever.
                 if (!gameplayVisible && scoresByUser.TryGetValue(userId, out Score? waitingScore))
-                    clock.WaitingOnFrames = waitingScore.Replay.Frames.Count == 0;
+                {
+                    clock.WaitingOnFrames = SpectatorFrameWait.ShouldWait(
+                        false,
+                        waitingScore.Replay.Frames.Count,
+                        waitingScore.Replay.HasReceivedAllFrames);
+                }
 
                 clock.ProcessFrame();
             }
@@ -1512,6 +1605,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
             cellsByUser.Clear();
             clocksByUser.Clear();
             scoresByUser.Clear();
+            passedUsers.Clear();
             modsByUser.Clear();
             SpectatedItem = null;
             updateSpectatedScore();

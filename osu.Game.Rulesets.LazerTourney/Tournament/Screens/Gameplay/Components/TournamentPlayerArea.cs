@@ -38,6 +38,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         public event Action? OnGameplayStarted;
 
         /// <summary>
+        /// Raised when the loaded player is about to show its results screen. At this point the
+        /// replay has played out to the end (including any storyboard outro) and the clock is no
+        /// longer needed to advance it.
+        /// </summary>
+        public event Action? OnResultsShown;
+
+        /// <summary>
         /// Whether a <see cref="Player"/> is loaded in the area.
         /// </summary>
         public bool PlayerLoaded => stack?.CurrentScreen is Player { IsLoaded: true };
@@ -167,6 +174,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     GameplayStatePublic = player.GameplayStatePublic;
                     OnGameplayStarted?.Invoke();
                 };
+
+                player.OnShowingResults += () => OnResultsShown?.Invoke();
 
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
 
