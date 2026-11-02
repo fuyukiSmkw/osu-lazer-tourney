@@ -134,6 +134,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                                 // so layout changes apply immediately, then reset onto the new cells.
                                 rebuildLayout(Math.Clamp(LadderInfo.PlayersPerTeam.Value, 1, 4));
                                 spectateSession.ResetSpectate();
+
+                                // A reset also ends a finished match's results view (chat back,
+                                // song bar collapsed), but a reset during a live match must keep
+                                // the gameplay layout.
+                                if (!spectateSession.IsFrozen)
+                                    showChat.Value = true;
                             },
                         },
                         new ResetPlayerButton(spectateSession, onlineState),
@@ -162,7 +168,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
 
             onlineState.RoomState.BindValueChanged(state =>
             {
-                State.Value = state.NewValue.ToTourneyState();
+                var next = state.NewValue.ToTourneyState();
+
+                // A match always returns the room to Open before the local replay has necessarily
+                // finished (see SpectateSession's pass handling). Keep the in-match layout in that
+                // case: score bar, expanded song bar and contracted chat must stay until the next
+                // match, a "Reset spectate" or the chat toggle asks for the idle layout.
+                if (state.NewValue == MultiplayerRoomState.Open && State.Value == TourneyState.Playing)
+                    return;
+
+                State.Value = next;
             }, true);
 
             State.BindValueChanged(_ => updateState(), true);
