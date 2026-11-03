@@ -38,6 +38,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         public static readonly Color4 NAME_COLOUR_RED = new OsuColour().RedLight;
         public static readonly Color4 NAME_COLOUR_BLUE = new OsuColour().BlueLight;
         public static readonly Color4 NAME_COLOUR_COMBOBREAK = new OsuColour().Red2;
+        public static readonly Color4 NAME_COLOUR_STAFF = new OsuColour().YellowLight;
+        public static readonly Color4 NAME_COLOUR_NEUTRAL = OsuColour.Gray(0.9f);
 
         private static Colour4 parseColour(string? value, Colour4 fallback)
         {
