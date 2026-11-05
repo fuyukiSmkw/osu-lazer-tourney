@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using osu.Framework.Allocation;
 using osu.Framework.Audio;
+using osu.Framework.Audio.Sample;
 using osu.Framework.Bindables;
 using osu.Framework.Extensions;
 using osu.Framework.Graphics;
@@ -186,6 +187,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         private bool customMultiplierActive;
 
         private SkinnableSound breakSound = null!;
+        private Sample? matchStartSample;
         private Bindable<bool> alwaysPlayFirstBreak = null!;
         private Bindable<bool> automaticallyDownload = null!;
         private CancellationTokenSource? downloadCheckCancellation;
@@ -331,9 +333,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         }
 
         [BackgroundDependencyLoader]
-        private void load()
+        private void load(AudioManager audio)
         {
             AddInternal(breakSound = new SkinnableSound(new SampleInfo("Gameplay/combobreak")));
+            // Official multiplayer's gameplay-start sound (MultiplayerMatchSubScreen.sampleStart).
+            // Played once per match from onLoadRequested, never from reset/showcase playback paths.
+            matchStartSample = audio.Samples.Get(@"SongSelect/confirm-selection");
             AddInternal(beatmapAvailabilityTracker = new MultiplayerBeatmapAvailabilityTracker());
             alwaysPlayFirstBreak = config.GetBindable<bool>(OsuSetting.AlwaysPlayFirstComboBreak);
             automaticallyDownload = config.GetBindable<bool>(OsuSetting.AutomaticallyDownloadMissingBeatmaps);
@@ -815,6 +820,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         {
             if (multiplayerClient.Room == null)
                 return;
+
+            // Match start only: resets and showcase replay playback never pass through
+            // LoadRequested, so the official start cue stays limited to new games in rooms.
+            matchStartSample?.Play();
 
             // A new match clears previous results/last frames (kept until now).
             // Exit to room-following first so globals snap to the new item,
