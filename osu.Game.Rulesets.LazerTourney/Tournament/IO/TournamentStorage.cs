@@ -15,6 +15,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
     public class TournamentStorage : WrappedStorage
     {
         /// <summary>
+        /// The directory (relative to the game's storage) holding all tournaments.
+        /// </summary>
+        public const string TOURNAMENTS_DIRECTORY = @"tournaments-lazer";
+
+        /// <summary>
         /// The storage where all tournaments are located.
         /// </summary>
         public readonly Storage AllTournaments;
@@ -26,7 +31,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         public void SaveIni() => TournamentConfigManager.SaveIni();
 
         public TournamentStorage(Storage storage)
-            : base(storage.GetStorageForDirectory("tournaments-lazer"), string.Empty)
+            : base(GetAllTournamentsStorage(storage), string.Empty)
         {
             AllTournaments = UnderlyingStorage;
 
@@ -48,6 +53,45 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         }
 
         public IEnumerable<string> ListTournaments() => AllTournaments.GetDirectories(string.Empty).Order(StringComparer.CurrentCultureIgnoreCase);
+
+        /// <summary>
+        /// Returns the storage that contains all tournament directories.
+        /// </summary>
+        public static Storage GetAllTournamentsStorage(Storage storage) => storage.GetStorageForDirectory(TOURNAMENTS_DIRECTORY);
+
+        /// <summary>
+        /// Lists all tournament directory names without creating a <see cref="TournamentStorage"/> instance.
+        /// </summary>
+        public static IEnumerable<string> ListTournaments(Storage storage) =>
+            GetAllTournamentsStorage(storage).GetDirectories(string.Empty).Order(StringComparer.CurrentCultureIgnoreCase);
+
+        /// <summary>
+        /// Reads the persisted current tournament without keeping a long-lived config manager.
+        /// </summary>
+        /// <remarks>
+        /// The settings overlay and the tournament client both write the shared ini file. Creating a
+        /// fresh manager for each access ensures stale in-memory values cannot overwrite changes made
+        /// by the other side.
+        /// </remarks>
+        public static string GetCurrentTournament(Storage storage)
+        {
+            // Deliberately not disposed: IniConfigManager saves on disposal, and reading the
+            // current tournament must not write to the shared config file.
+            var config = new TournamentConfigManager(storage);
+            return config.Get<string>(StorageConfig.CurrentTournament);
+        }
+
+        /// <summary>
+        /// Persists the current tournament so the next <see cref="TournamentStorage"/> instance uses it.
+        /// </summary>
+        public static void SetCurrentTournament(Storage storage, string tournament)
+        {
+            using (var config = new TournamentConfigManager(storage))
+            {
+                config.SetValue(StorageConfig.CurrentTournament, tournament);
+                config.SaveIni();
+            }
+        }
 
         /// <summary>
         /// Local port used for the referee OAuth callback listener.
