@@ -36,5 +36,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         [Description("Legacy stable (by Torii)")]
         Legacy,
+
+        /// <summary>
+        /// Hello! Shanden Cup results screen design by [SHK]T_T.
+        /// A mirrored single-player card with a fixed 4:3 design canvas.
+        /// </summary>
+        [Description("Hello! Shanden Cup (by [SHK]T_T, cdwcgt)")]
+        HSC,
     }
 }

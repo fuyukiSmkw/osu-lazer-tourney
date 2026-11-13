@@ -11,6 +11,7 @@ using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens;
@@ -101,6 +102,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private readonly LoadingLayer loadingLayer;
         private OsuScreenStack? stack;
 
+        /// <summary>
+        /// Team side this play belongs to. Used by results screens that mirror their layout.
+        /// </summary>
+        public TeamColour TeamColour { get; init; } = TeamColour.Red;
+
+        /// <summary>
+        /// Optional provider for this play's placement among all users in the room.
+        /// </summary>
+        public Func<int?>? PlacementProvider { get; init; }
+
         public TournamentPlayerArea(int userId, SpectatorPlayerClock clock, IAggregateAudioAdjustment? masterAdjustments = null)
         {
             UserId = userId;
@@ -166,6 +177,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock)
                 {
                     ScoreWeight = ScoreWeight,
+                    TeamColour = TeamColour,
+                    PlacementProvider = PlacementProvider,
                 };
                 player.OnGameplayStarted += () =>
                 {

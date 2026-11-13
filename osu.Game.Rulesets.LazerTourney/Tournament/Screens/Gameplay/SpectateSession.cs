@@ -301,6 +301,18 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
         public IReadOnlyDictionary<int, Score> ScoresByUser => scoresByUser;
 
         /// <summary>
+        /// Returns a user's 1-based placement among all users in the room that have a play,
+        /// or <see langword="null"/> when the user has no known score.
+        /// </summary>
+        private int? getPlacement(int userId)
+        {
+            if (!scoresByUser.TryGetValue(userId, out Score? own))
+                return null;
+
+            return 1 + scoresByUser.Count(kv => kv.Key != userId && kv.Value.ScoreInfo.TotalScore > own.ScoreInfo.TotalScore);
+        }
+
+        /// <summary>
         /// Read-only access to red team cells.
         /// </summary>
         public IReadOnlyList<SpectateCell>? RedCells => redCells;
@@ -1162,7 +1174,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay
                     // Per-player custom multiplier for the cell HUD and results, evaluated once:
                     // mods are locked once the match starts so one weight lasts the whole play.
                     // Inactive rules evaluate to 1, which disables the adjustment entirely.
-                    ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods)
+                    ScoreWeight = activeMultiplierRule.Evaluate(playScore.ScoreInfo.Mods),
+
+                    // Results screens that mirror their layout need the visual side, not the room
+                    // team state: non-team rooms still split players between red and blue cells.
+                    TeamColour = redCells?.Contains(cell) == true ? TeamColour.Red : TeamColour.Blue,
+
+                    // Placement is a room-wide ranking at results time. Only users we have a play
+                    // for can be ranked; missing scores simply rank below completed ones.
+                    PlacementProvider = () => getPlacement(userId)
                 };
 
                 clocksByUser[userId] = clock;

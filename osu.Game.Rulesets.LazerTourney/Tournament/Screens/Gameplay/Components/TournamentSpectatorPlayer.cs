@@ -1,6 +1,7 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -8,6 +9,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Legacy;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
@@ -33,6 +35,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// Set before load; mods are locked once a match starts so one weight lasts the whole play.
         /// </summary>
         public double ScoreWeight { get; set; } = 1;
+
+        /// <summary>
+        /// Team side this play belongs to. Used by results screens that mirror their layout.
+        /// </summary>
+        public TeamColour TeamColour { get; init; } = TeamColour.Red;
+
+        /// <summary>
+        /// Optional provider for this play's placement among all users in the room.
+        /// Evaluated when the results screen is created.
+        /// </summary>
+        public Func<int?>? PlacementProvider { get; init; }
 
         /// <summary>
         /// Public access to the score processor for external consumers.
@@ -126,6 +139,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     AllowRetry = false,
                 },
                 ResultScreenStyle.Legacy => new LegacyResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.HSC => new HSCResultsScreen(score, TeamColour, PlacementProvider?.Invoke())
                 {
                     AllowWatchingReplay = false,
                     AllowRetry = false,
