@@ -60,6 +60,9 @@ Remove `-c Release` for debug build.
 * [ppy/osu](https://github.com/ppy/osu): The official osu!lazer project. Lots of reference for multiplayer room & spectator implementation.
 * [MATRIX-feather/LLin](https://github.com/MATRIX-feather/LLin): A custom ruleset that provides beatmap downloads from a mirror site and includes a music player. Inspired for ruleset DI.
 * [EVAST9919/lazer-sandbox](https://github.com/EVAST9919/lazer-sandbox): Reference for ruleset DI structure.
+* [GooGuTeam/g0v0](https://github.com/GooGuTeam/g0v0): V2 results screen
+* [ShikkesoraSIM/torii](https://github.com/ShikkesoraSIM/torii): Legacy results screen
+* *Hello! Shanden Cup* [host & design `[SHK]T_T`](https://osu.ppy.sh/users/13999223), [tourney dev `cdwcgt`](https://github.com/cdwcgt): HSC results screen
 
 ## AI Usage Declaration
 

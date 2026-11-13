@@ -75,6 +75,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
             (30732590, "g0v0 dev (V2 results)"),
             (30656658, "g0v0 dev (V2 results)"),
             (5382216, "Torii dev (Legacy results)"),
+            (13999223, "HSC host & design (HSC results)"),
+            (14721101, "HSC coder (HSC results)"),
         ];
 
         [BackgroundDependencyLoader]
