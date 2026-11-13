@@ -35,7 +35,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         {
             AllTournaments = UnderlyingStorage;
 
-            TournamentConfigManager = new TournamentConfigManager(storage);
+            TournamentConfigManager = TournamentConfigManager.GetShared(storage);
 
             CurrentTournament = TournamentConfigManager.GetBindable<string>(StorageConfig.CurrentTournament);
 
@@ -66,31 +66,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
             GetAllTournamentsStorage(storage).GetDirectories(string.Empty).Order(StringComparer.CurrentCultureIgnoreCase);
 
         /// <summary>
-        /// Reads the persisted current tournament without keeping a long-lived config manager.
+        /// Reads the persisted current tournament.
         /// </summary>
         /// <remarks>
-        /// The settings overlay and the tournament client both write the shared ini file. Creating a
-        /// fresh manager for each access ensures stale in-memory values cannot overwrite changes made
-        /// by the other side.
+        /// Uses the process-wide config manager. Never create a throwaway manager just to read a value: loading an
+        /// ini file mutates the bindables, which queues a debounced background save that would write the loaded
+        /// snapshot back to disk a moment later (see <see cref="TournamentConfigManager.GetShared"/>).
         /// </remarks>
         public static string GetCurrentTournament(Storage storage)
-        {
-            // Deliberately not disposed: IniConfigManager saves on disposal, and reading the
-            // current tournament must not write to the shared config file.
-            var config = new TournamentConfigManager(storage);
-            return config.Get<string>(StorageConfig.CurrentTournament);
-        }
+            => TournamentConfigManager.GetShared(storage).Get<string>(StorageConfig.CurrentTournament);
 
         /// <summary>
         /// Persists the current tournament so the next <see cref="TournamentStorage"/> instance uses it.
         /// </summary>
         public static void SetCurrentTournament(Storage storage, string tournament)
         {
-            using (var config = new TournamentConfigManager(storage))
-            {
-                config.SetValue(StorageConfig.CurrentTournament, tournament);
-                config.SaveIni();
-            }
+            var config = TournamentConfigManager.GetShared(storage);
+
+            config.SetValue(StorageConfig.CurrentTournament, tournament);
+            config.SaveIni();
         }
 
         /// <summary>

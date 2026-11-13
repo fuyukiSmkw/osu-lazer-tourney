@@ -212,8 +212,16 @@ public partial class LazerTourneySettingsSubsection : RulesetSettingsSubsection
 
     private void onTournamentCreated(string name)
     {
-        refreshTournaments();
+        // Set the selection first (while suppressed) so the dropdown items and the persisted value agree,
+        // then persist it explicitly. This avoids writing the old on-disk value back in between.
+        suppressSelectionChange = true;
+
         selectedTournament.Value = name;
+        tournamentDropdown.Items = getTournamentItems();
+
+        suppressSelectionChange = false;
+
+        TournamentStorage.SetCurrentTournament(storage, name);
     }
 
     private partial class CreateTournamentButton : SettingsButtonV2, IHasPopover
