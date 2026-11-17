@@ -1,19 +1,21 @@
 ﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
-using System.Linq;
+using System;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Graphics;
+using osu.Game.Graphics.Containers;
 using osu.Game.Online.API;
 using osu.Game.Online.API.Requests;
 using osu.Game.Online.API.Requests.Responses;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components;
 using osuTK;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
@@ -30,112 +32,117 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
             this.team = team;
         }
 
-        public partial class SeedingResultRow : CompositeDrawable, IModelBacked<SeedingResult>
+        public partial class SeedingResultRow : OsuRearrangeableListItem<SeedingResult>, IModelBacked<SeedingResult>
         {
-            public SeedingResult Model { get; }
+            // The base item exposes the model as a field; the editor screen expects an IModelBacked property.
+            SeedingResult IModelBacked<SeedingResult>.Model => Model;
+
+            private readonly TournamentTeam team;
 
             public SeedingResultRow(TournamentTeam team, SeedingResult round)
+                : base(round)
             {
-                Model = round;
+                this.team = team;
 
                 Masking = true;
                 CornerRadius = 10;
+            }
 
-                SeedingBeatmapEditor beatmapEditor = new SeedingBeatmapEditor(round)
+            [BackgroundDependencyLoader]
+            private void load()
+            {
+                // The item draws the row background (so it also covers the drag handle); added after the base
+                // dependency loader so it is not overwritten by the base's children setup.
+                AddInternal(new Box
+                {
+                    Colour = OsuColour.Gray(0.1f),
+                    RelativeSizeAxes = Axes.Both,
+                    Depth = float.MaxValue,
+                });
+            }
+
+            protected override Drawable CreateContent()
+            {
+                SeedingBeatmapEditor beatmapEditor = new SeedingBeatmapEditor(Model)
                 {
                     Width = 0.95f
                 };
 
-                InternalChildren = new Drawable[]
+                return new Container
                 {
-                    new Box
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    Children = new Drawable[]
                     {
-                        Colour = OsuColour.Gray(0.1f),
-                        RelativeSizeAxes = Axes.Both,
-                    },
-                    new FillFlowContainer
-                    {
-                        Margin = new MarginPadding(5),
-                        Padding = new MarginPadding { Right = 160 },
-                        Spacing = new Vector2(5),
-                        Direction = FillDirection.Full,
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Children = new Drawable[]
+                        new FillFlowContainer
                         {
-                            new SettingsTextBox
+                            Margin = new MarginPadding(5),
+                            Padding = new MarginPadding { Right = 160 },
+                            Spacing = new Vector2(5),
+                            Direction = FillDirection.Full,
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
                             {
-                                LabelText = "Mod",
-                                Width = 0.33f,
-                                Current = Model.Mod
-                            },
-                            new SettingsSlider<int>
-                            {
-                                LabelText = "Seed",
-                                Width = 0.33f,
-                                Current = Model.Seed
-                            },
-                            new SettingsButton
-                            {
-                                Width = 0.2f,
-                                Margin = new MarginPadding(10),
-                                Text = "Add beatmap",
-                                Action = beatmapEditor.CreateNew
-                            },
-                            beatmapEditor
-                        }
-                    },
-                    new DangerousSettingsButton
-                    {
-                        Anchor = Anchor.CentreRight,
-                        Origin = Anchor.CentreRight,
-                        RelativeSizeAxes = Axes.None,
-                        Width = 150,
-                        Text = "Delete result",
-                        Action = () =>
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Mod",
+                                    Width = 0.33f,
+                                    Current = Model.Mod
+                                },
+                                new SettingsSlider<int>
+                                {
+                                    LabelText = "Seed",
+                                    Width = 0.33f,
+                                    Current = Model.Seed
+                                },
+                                new SettingsButton
+                                {
+                                    Width = 0.2f,
+                                    Margin = new MarginPadding(10),
+                                    Text = "Add beatmap",
+                                    Action = beatmapEditor.CreateNew
+                                },
+                                beatmapEditor
+                            }
+                        },
+                        new DangerousSettingsButton
                         {
-                            Expire();
-                            team.SeedingResults.Remove(Model);
+                            Anchor = Anchor.CentreRight,
+                            Origin = Anchor.CentreRight,
+                            RelativeSizeAxes = Axes.None,
+                            Width = 150,
+                            Text = "Delete result",
+                            // The list container removes (and disposes) the row once the model entry is gone.
+                            Action = () => team.SeedingResults.Remove(Model),
                         },
                     }
                 };
-
-                RelativeSizeAxes = Axes.X;
-                AutoSizeAxes = Axes.Y;
             }
 
-            public partial class SeedingBeatmapEditor : CompositeDrawable
+            public partial class SeedingBeatmapEditor : ExpandedRearrangeableListContainer<SeedingBeatmap>
             {
                 private readonly SeedingResult round;
-                private readonly FillFlowContainer flow;
 
                 public SeedingBeatmapEditor(SeedingResult round)
                 {
                     this.round = round;
 
-                    RelativeSizeAxes = Axes.X;
-                    AutoSizeAxes = Axes.Y;
-
-                    InternalChild = flow = new FillFlowContainer
-                    {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        ChildrenEnumerable = round.Beatmaps.Select(p => new SeedingBeatmapRow(round, p))
-                    };
+                    // Dragging rows around updates the seeding model directly (and keeps external model changes in sync).
+                    Items.BindTarget = round.Beatmaps;
                 }
 
                 public void CreateNew()
                 {
-                    var user = new SeedingBeatmap();
-                    round.Beatmaps.Add(user);
-                    flow.Add(new SeedingBeatmapRow(round, user));
+                    round.Beatmaps.Add(new SeedingBeatmap());
                 }
 
-                public partial class SeedingBeatmapRow : CompositeDrawable
+                protected override OsuRearrangeableListItem<SeedingBeatmap> CreateOsuDrawable(SeedingBeatmap item)
+                    => new SeedingBeatmapRow(round, item);
+
+                public partial class SeedingBeatmapRow : OsuRearrangeableListItem<SeedingBeatmap>
                 {
                     private readonly SeedingResult result;
-                    public SeedingBeatmap Model { get; }
 
                     [Resolved]
                     protected IAPIProvider API { get; private set; } = null!;
@@ -144,83 +151,31 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
 
                     private readonly Bindable<string> score = new Bindable<string>(string.Empty);
 
-                    private readonly Container drawableContainer;
+                    private Container drawableContainer = null!;
 
                     public SeedingBeatmapRow(SeedingResult result, SeedingBeatmap beatmap)
+                        : base(beatmap)
                     {
                         this.result = result;
-                        Model = beatmap;
 
                         Margin = new MarginPadding(10);
 
-                        RelativeSizeAxes = Axes.X;
-                        AutoSizeAxes = Axes.Y;
-
                         Masking = true;
                         CornerRadius = 5;
-
-                        InternalChildren = new Drawable[]
-                        {
-                            new Box
-                            {
-                                Colour = OsuColour.Gray(0.2f),
-                                RelativeSizeAxes = Axes.Both,
-                            },
-                            new FillFlowContainer
-                            {
-                                Margin = new MarginPadding(5),
-                                Padding = new MarginPadding { Right = 160 },
-                                Spacing = new Vector2(5),
-                                Direction = FillDirection.Horizontal,
-                                AutoSizeAxes = Axes.Both,
-                                Children = new Drawable[]
-                                {
-                                    new SettingsNumberBox
-                                    {
-                                        LabelText = "Beatmap ID",
-                                        RelativeSizeAxes = Axes.None,
-                                        Width = 200,
-                                        Current = beatmapId,
-                                    },
-                                    new SettingsSlider<int>
-                                    {
-                                        LabelText = "Seed",
-                                        RelativeSizeAxes = Axes.None,
-                                        Width = 200,
-                                        Current = beatmap.Seed
-                                    },
-                                    new SettingsTextBox
-                                    {
-                                        LabelText = "Score",
-                                        RelativeSizeAxes = Axes.None,
-                                        Width = 200,
-                                        Current = score,
-                                    },
-                                    drawableContainer = new Container
-                                    {
-                                        Size = new Vector2(100, 70),
-                                    },
-                                }
-                            },
-                            new DangerousSettingsButton
-                            {
-                                Anchor = Anchor.CentreRight,
-                                Origin = Anchor.CentreRight,
-                                RelativeSizeAxes = Axes.None,
-                                Width = 150,
-                                Text = "Delete Beatmap",
-                                Action = () =>
-                                {
-                                    Expire();
-                                    result.Beatmaps.Remove(beatmap);
-                                },
-                            }
-                        };
                     }
 
                     [BackgroundDependencyLoader]
                     private void load()
                     {
+                        // The item draws the row background (so it also covers the drag handle); added after the base
+                        // dependency loader so it is not overwritten by the base's children setup.
+                        AddInternal(new Box
+                        {
+                            Colour = OsuColour.Gray(0.2f),
+                            RelativeSizeAxes = Axes.Both,
+                            Depth = float.MaxValue,
+                        });
+
                         beatmapId.Value = Model.ID;
                         beatmapId.BindValueChanged(id =>
                         {
@@ -256,6 +211,64 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                         score.BindValueChanged(str => long.TryParse(str.NewValue, out Model.Score));
                     }
 
+                    protected override Drawable CreateContent()
+                    {
+                        return new Container
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
+                            {
+                                new FillFlowContainer
+                                {
+                                    Margin = new MarginPadding(5),
+                                    Padding = new MarginPadding { Right = 160 },
+                                    Spacing = new Vector2(5),
+                                    Direction = FillDirection.Horizontal,
+                                    AutoSizeAxes = Axes.Both,
+                                    Children = new Drawable[]
+                                    {
+                                        new SettingsNumberBox
+                                        {
+                                            LabelText = "Beatmap ID",
+                                            RelativeSizeAxes = Axes.None,
+                                            Width = 200,
+                                            Current = beatmapId,
+                                        },
+                                        new SettingsSlider<int>
+                                        {
+                                            LabelText = "Seed",
+                                            RelativeSizeAxes = Axes.None,
+                                            Width = 200,
+                                            Current = Model.Seed
+                                        },
+                                        new SettingsTextBox
+                                        {
+                                            LabelText = "Score",
+                                            RelativeSizeAxes = Axes.None,
+                                            Width = 200,
+                                            Current = score,
+                                        },
+                                        drawableContainer = new Container
+                                        {
+                                            Size = new Vector2(100, 70),
+                                        },
+                                    }
+                                },
+                                new DangerousSettingsButton
+                                {
+                                    Anchor = Anchor.CentreRight,
+                                    Origin = Anchor.CentreRight,
+                                    RelativeSizeAxes = Axes.None,
+                                    Width = 150,
+                                    Text = "Delete Beatmap",
+                                    // The list container removes (and disposes) the row once the model entry is gone.
+                                    Action = () => result.Beatmaps.Remove(Model),
+                                }
+                            }
+                        };
+                    }
+
                     private void updatePanel()
                     {
                         drawableContainer.Clear();
@@ -275,5 +288,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
         }
 
         protected override SeedingResultRow CreateDrawable(SeedingResult model) => new SeedingResultRow(team, model);
+
+        protected override OsuRearrangeableListContainer<SeedingResult> CreateReorderableList()
+        {
+            var list = new SeedingResultList(CreateDrawable);
+
+            // Dragging results around updates the bracket model directly (and keeps external model changes in sync).
+            list.Items.BindTarget = team.SeedingResults;
+
+            return list;
+        }
+
+        /// <summary>
+        /// Reorderable list of <see cref="SeedingResultRow"/>s, shown in place of the editor's default flow.
+        /// </summary>
+        public partial class SeedingResultList : ExpandedRearrangeableListContainer<SeedingResult>
+        {
+            private readonly Func<SeedingResult, SeedingResultRow> createRow;
+
+            public SeedingResultList(Func<SeedingResult, SeedingResultRow> createRow)
+            {
+                this.createRow = createRow;
+            }
+
+            protected override OsuRearrangeableListItem<SeedingResult> CreateOsuDrawable(SeedingResult item) => createRow(item);
+
+            // Matches the spacing the default editor flow uses between rows.
+            protected override FillFlowContainer<RearrangeableListItem<SeedingResult>> CreateListFillFlowContainer()
+                => base.CreateListFillFlowContainer().With(list => list.Spacing = new Vector2(0, 20));
+        }
     }
 }

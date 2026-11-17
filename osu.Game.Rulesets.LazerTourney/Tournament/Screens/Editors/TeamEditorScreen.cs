@@ -11,6 +11,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
 using osu.Game.Graphics;
+using osu.Game.Graphics.Containers;
 using osu.Game.Overlays;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
@@ -38,6 +39,35 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
 
         protected override TeamRow CreateDrawable(TournamentTeam model) => new TeamRow(model, this);
 
+        protected override OsuRearrangeableListContainer<TournamentTeam> CreateReorderableList()
+        {
+            var list = new TeamList(CreateDrawable);
+
+            // Dragging teams around updates the bracket model directly (and keeps external model changes in sync).
+            list.Items.BindTarget = Storage;
+
+            return list;
+        }
+
+        /// <summary>
+        /// Reorderable list of <see cref="TeamRow"/>s, shown in place of the editor's default flow.
+        /// </summary>
+        public partial class TeamList : ExpandedRearrangeableListContainer<TournamentTeam>
+        {
+            private readonly Func<TournamentTeam, TeamRow> createRow;
+
+            public TeamList(Func<TournamentTeam, TeamRow> createRow)
+            {
+                this.createRow = createRow;
+            }
+
+            protected override OsuRearrangeableListItem<TournamentTeam> CreateOsuDrawable(TournamentTeam item) => createRow(item);
+
+            // Matches the spacing the default editor flow uses between rows.
+            protected override FillFlowContainer<RearrangeableListItem<TournamentTeam>> CreateListFillFlowContainer()
+                => base.CreateListFillFlowContainer().With(list => list.Spacing = new Vector2(0, 20));
+        }
+
         private void addAllCountries()
         {
             var countries = new List<TournamentTeam>();
@@ -56,9 +86,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                 Storage.Add(c);
         }
 
-        public partial class TeamRow : CompositeDrawable, IModelBacked<TournamentTeam>
+        public partial class TeamRow : OsuRearrangeableListItem<TournamentTeam>, IModelBacked<TournamentTeam>
         {
-            public TournamentTeam Model { get; }
+            // The base item exposes the model as a field; the editor screen expects an IModelBacked property.
+            TournamentTeam IModelBacked<TournamentTeam>.Model => Model;
 
             [Resolved]
             private TournamentSceneManager? sceneManager { get; set; }
@@ -69,111 +100,123 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
             [Resolved]
             private LadderInfo ladderInfo { get; set; } = null!;
 
-            private readonly SettingsTextBox acronymTextBox;
+            private readonly TournamentScreen parent;
+            private SettingsTextBox acronymTextBox = null!;
 
             public TeamRow(TournamentTeam team, TournamentScreen parent)
+                : base(team)
             {
-                Model = team;
+                this.parent = parent;
 
                 Masking = true;
                 CornerRadius = 10;
+            }
 
-                RelativeSizeAxes = Axes.X;
-                AutoSizeAxes = Axes.Y;
+            [BackgroundDependencyLoader]
+            private void load()
+            {
+                // The item draws the row background (so it also covers the drag handle); added after the base
+                // dependency loader so it is not overwritten by the base's children setup.
+                AddInternal(new Box
+                {
+                    Colour = OsuColour.Gray(0.1f),
+                    RelativeSizeAxes = Axes.Both,
+                    Depth = float.MaxValue,
+                });
+            }
 
+            protected override Drawable CreateContent()
+            {
                 PlayerEditor playerEditor = new PlayerEditor(Model);
 
-                InternalChildren = new Drawable[]
+                return new Container
                 {
-                    new Box
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    Children = new Drawable[]
                     {
-                        Colour = OsuColour.Gray(0.1f),
-                        RelativeSizeAxes = Axes.Both,
-                    },
-                    new GroupTeam(team)
-                    {
-                        Margin = new MarginPadding(16),
-                        Scale = new Vector2(2),
-                        Anchor = Anchor.TopRight,
-                        Origin = Anchor.TopRight,
-                    },
-                    new FillFlowContainer
-                    {
-                        Spacing = new Vector2(5),
-                        Padding = new MarginPadding(10),
-                        Direction = FillDirection.Full,
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Children = new Drawable[]
+                        new GroupTeam(Model)
                         {
-                            new SettingsTextBox
+                            Margin = new MarginPadding(16),
+                            Scale = new Vector2(2),
+                            Anchor = Anchor.TopRight,
+                            Origin = Anchor.TopRight,
+                        },
+                        new FillFlowContainer
+                        {
+                            Spacing = new Vector2(5),
+                            Padding = new MarginPadding(10),
+                            Direction = FillDirection.Full,
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
                             {
-                                LabelText = "Name",
-                                Width = 0.33f,
-                                Current = Model.FullName
-                            },
-                            acronymTextBox = new SettingsTextBox
-                            {
-                                LabelText = "Acronym",
-                                Width = 0.25f,
-                                Current = Model.Acronym
-                            },
-                            new SettingsTextBox
-                            {
-                                LabelText = "Flag",
-                                Width = 0.25f,
-                                Current = Model.FlagName
-                            },
-                            new SettingsButton
-                            {
-                                Width = 0.33f,
-                                Margin = new MarginPadding { Top = 20 },
-                                Text = "Edit seeding results",
-                                Action = () =>
+                                new SettingsTextBox
                                 {
-                                    sceneManager?.SetScreen(new SeedingEditorScreen(team, parent));
-                                }
-                            },
-                            new SettingsTextBox
-                            {
-                                LabelText = "Seed",
-                                Width = 0.25f,
-                                Current = Model.Seed
-                            },
-                            new SettingsTextBox
-                            {
-                                LabelText = "Last Year Placement",
-                                Width = 0.25f,
-                                Current = Model.LastYearPlacing
-                            },
-                            playerEditor,
-                            new SettingsButton
-                            {
-                                Text = "Add player",
-                                Action = playerEditor.CreateNew
-                            },
-                            new Container
-                            {
-                                RelativeSizeAxes = Axes.X,
-                                AutoSizeAxes = Axes.Y,
-                                Children = new Drawable[]
+                                    LabelText = "Name",
+                                    Width = 0.33f,
+                                    Current = Model.FullName
+                                },
+                                acronymTextBox = new SettingsTextBox
                                 {
-                                    new DangerousSettingsButton
+                                    LabelText = "Acronym",
+                                    Width = 0.25f,
+                                    Current = Model.Acronym
+                                },
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Flag",
+                                    Width = 0.25f,
+                                    Current = Model.FlagName
+                                },
+                                new SettingsButton
+                                {
+                                    Width = 0.33f,
+                                    Margin = new MarginPadding { Top = 20 },
+                                    Text = "Edit seeding results",
+                                    Action = () =>
                                     {
-                                        Width = 0.2f,
-                                        Text = "Delete Team",
-                                        Anchor = Anchor.TopRight,
-                                        Origin = Anchor.TopRight,
-                                        Action = () => dialogOverlay?.Push(new DeleteTeamDialog(Model, () =>
+                                        sceneManager?.SetScreen(new SeedingEditorScreen(Model, parent));
+                                    }
+                                },
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Seed",
+                                    Width = 0.25f,
+                                    Current = Model.Seed
+                                },
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Last Year Placement",
+                                    Width = 0.25f,
+                                    Current = Model.LastYearPlacing
+                                },
+                                playerEditor,
+                                new SettingsButton
+                                {
+                                    Text = "Add player",
+                                    Action = playerEditor.CreateNew
+                                },
+                                new Container
+                                {
+                                    RelativeSizeAxes = Axes.X,
+                                    AutoSizeAxes = Axes.Y,
+                                    Children = new Drawable[]
+                                    {
+                                        new DangerousSettingsButton
                                         {
-                                            Expire();
-                                            ladderInfo.Teams.Remove(Model);
-                                        })),
-                                    },
-                                }
-                            },
-                        }
-                    },
+                                            Width = 0.2f,
+                                            Text = "Delete Team",
+                                            Anchor = Anchor.TopRight,
+                                            Origin = Anchor.TopRight,
+                                            // The list container removes (and disposes) the row once the model entry is gone.
+                                            Action = () => dialogOverlay?.Push(new DeleteTeamDialog(Model, () => ladderInfo.Teams.Remove(Model))),
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                    }
                 };
             }
 
