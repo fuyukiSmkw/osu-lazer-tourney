@@ -13,6 +13,7 @@ using osu.Framework.Graphics.Shapes;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.Drawables;
 using osu.Game.Graphics;
+using osu.Game.Graphics.Containers;
 using osu.Game.Graphics.Sprites;
 using osu.Game.Online;
 using osu.Game.Online.API;
@@ -59,9 +60,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
             }, true);
         }
 
-        public partial class RoundRow : CompositeDrawable, IModelBacked<TournamentRound>
+        public partial class RoundRow : OsuRearrangeableListItem<TournamentRound>, IModelBacked<TournamentRound>
         {
-            public TournamentRound Model { get; }
+            // The base item exposes the model as a field; the editor screen expects an IModelBacked property.
+            TournamentRound IModelBacked<TournamentRound>.Model => Model;
+
+            private readonly UserModSelectOverlay requiredOverlay;
+            private readonly FreeModSelectOverlay allowedOverlay;
 
             [Resolved]
             private LadderInfo ladderInfo { get; set; } = null!;
@@ -70,115 +75,123 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
             private IDialogOverlay? dialogOverlay { get; set; }
 
             public RoundRow(TournamentRound round, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
+                : base(round)
             {
-                Model = round;
+                this.requiredOverlay = requiredOverlay;
+                this.allowedOverlay = allowedOverlay;
 
                 Masking = true;
                 CornerRadius = 10;
+            }
 
-                RoundBeatmapEditor beatmapEditor = new RoundBeatmapEditor(round, requiredOverlay, allowedOverlay)
+            [BackgroundDependencyLoader]
+            private void load()
+            {
+                // The item draws the row background (so it also covers the drag handle); added after the base
+                // dependency loader so it is not overwritten by the base's children setup.
+                AddInternal(new Box
+                {
+                    Colour = OsuColour.Gray(0.1f),
+                    RelativeSizeAxes = Axes.Both,
+                    Depth = float.MaxValue,
+                });
+            }
+
+            protected override Drawable CreateContent()
+            {
+                RoundBeatmapEditor beatmapEditor = new RoundBeatmapEditor(Model, requiredOverlay, allowedOverlay)
                 {
                     Width = 0.95f
                 };
 
-                InternalChildren = new Drawable[]
+                return new Container
                 {
-                    new Box
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    Children = new Drawable[]
                     {
-                        Colour = OsuColour.Gray(0.1f),
-                        RelativeSizeAxes = Axes.Both,
-                    },
-                    new FillFlowContainer
-                    {
-                        Margin = new MarginPadding(5),
-                        Padding = new MarginPadding { Right = 160 },
-                        Spacing = new Vector2(5),
-                        Direction = FillDirection.Full,
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Children = new Drawable[]
+                        new FillFlowContainer
                         {
-                            new SettingsTextBox
+                            Margin = new MarginPadding(5),
+                            Padding = new MarginPadding { Right = 160 },
+                            Spacing = new Vector2(5),
+                            Direction = FillDirection.Full,
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
                             {
-                                LabelText = "Name",
-                                Width = 0.33f,
-                                Current = Model.Name
-                            },
-                            new SettingsTextBox
-                            {
-                                LabelText = "Description",
-                                Width = 0.33f,
-                                Current = Model.Description
-                            },
-                            new DateTextBox
-                            {
-                                LabelText = "Start Time",
-                                Width = 0.33f,
-                                Current = Model.StartDate
-                            },
-                            new SettingsSlider<int>
-                            {
-                                LabelText = "# of Bans",
-                                Width = 0.33f,
-                                Current = Model.BanCount
-                            },
-                            new SettingsSlider<int>
-                            {
-                                LabelText = "# of Protects",
-                                Width = 0.33f,
-                                Current = Model.ProtectCount
-                            },
-                            new SettingsSlider<int>
-                            {
-                                LabelText = "Best of",
-                                Width = 0.33f,
-                                Current = Model.BestOf
-                            },
-                            new ModMultiplierRuleEditor
-                            {
-                                Width = 0.66f,
-                                LabelText = "Default mod multiplier rule",
-                                EmptyHint = "Empty = x1 for all maps in this round.",
-                                Current = Model.DefaultModMultiplierRule,
-                            },
-                            new SettingsButton
-                            {
-                                Width = 0.2f,
-                                Margin = new MarginPadding(10),
-                                Text = "Add beatmap",
-                                Action = beatmapEditor.CreateNew
-                            },
-                            beatmapEditor
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Name",
+                                    Width = 0.33f,
+                                    Current = Model.Name
+                                },
+                                new SettingsTextBox
+                                {
+                                    LabelText = "Description",
+                                    Width = 0.33f,
+                                    Current = Model.Description
+                                },
+                                new DateTextBox
+                                {
+                                    LabelText = "Start Time",
+                                    Width = 0.33f,
+                                    Current = Model.StartDate
+                                },
+                                new SettingsSlider<int>
+                                {
+                                    LabelText = "# of Bans",
+                                    Width = 0.33f,
+                                    Current = Model.BanCount
+                                },
+                                new SettingsSlider<int>
+                                {
+                                    LabelText = "# of Protects",
+                                    Width = 0.33f,
+                                    Current = Model.ProtectCount
+                                },
+                                new SettingsSlider<int>
+                                {
+                                    LabelText = "Best of",
+                                    Width = 0.33f,
+                                    Current = Model.BestOf
+                                },
+                                new ModMultiplierRuleEditor
+                                {
+                                    Width = 0.66f,
+                                    LabelText = "Default mod multiplier rule",
+                                    EmptyHint = "Empty = x1 for all maps in this round.",
+                                    Current = Model.DefaultModMultiplierRule,
+                                },
+                                new SettingsButton
+                                {
+                                    Width = 0.2f,
+                                    Margin = new MarginPadding(10),
+                                    Text = "Add beatmap",
+                                    Action = beatmapEditor.CreateNew
+                                },
+                                beatmapEditor
+                            }
+                        },
+                        new DangerousSettingsButton
+                        {
+                            Anchor = Anchor.CentreRight,
+                            Origin = Anchor.CentreRight,
+                            RelativeSizeAxes = Axes.None,
+                            Width = 150,
+                            Text = "Delete Round",
+                            // The list container removes (and disposes) the row once the model entry is gone.
+                            Action = () => dialogOverlay?.Push(new DeleteRoundDialog(Model, () => ladderInfo.Rounds.Remove(Model)))
                         }
-                    },
-                    new DangerousSettingsButton
-                    {
-                        Anchor = Anchor.CentreRight,
-                        Origin = Anchor.CentreRight,
-                        RelativeSizeAxes = Axes.None,
-                        Width = 150,
-                        Text = "Delete Round",
-                        Action = () => dialogOverlay?.Push(new DeleteRoundDialog(Model, () =>
-                        {
-                            Expire();
-                            ladderInfo.Rounds.Remove(Model);
-                        }))
                     }
                 };
-
-                RelativeSizeAxes = Axes.X;
-                AutoSizeAxes = Axes.Y;
             }
 
-            public partial class RoundBeatmapEditor : CompositeDrawable
+            public partial class RoundBeatmapEditor : ExpandedRearrangeableListContainer<RoundBeatmap>
             {
                 private readonly TournamentRound round;
-                private readonly FillFlowContainer flow;
                 private readonly UserModSelectOverlay requiredOverlay;
                 private readonly FreeModSelectOverlay allowedOverlay;
-
-                [Resolved]
-                private LadderInfo ladder { get; set; } = null!;
 
                 public RoundBeatmapEditor(TournamentRound round, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
                 {
@@ -186,37 +199,30 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     this.requiredOverlay = requiredOverlay;
                     this.allowedOverlay = allowedOverlay;
 
-                    RelativeSizeAxes = Axes.X;
-                    AutoSizeAxes = Axes.Y;
-
-                    InternalChild = flow = new FillFlowContainer
-                    {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        ChildrenEnumerable = round.Beatmaps.Select(p => new RoundBeatmapRow(round, p, requiredOverlay, allowedOverlay))
-                    };
+                    // Dragging rows around updates the bracket model directly (and keeps external model changes in sync).
+                    Items.BindTarget = round.Beatmaps;
                 }
 
                 public void CreateNew()
                 {
                     // New maps get the same defaults as old-bracket migration:
                     // freestyle off, no required mods, no allowed mods.
-                    var b = new RoundBeatmap
+                    round.Beatmaps.Add(new RoundBeatmap
                     {
                         Freestyle = false,
                         RequiredMods = Array.Empty<APIMod>(),
                         AllowedMods = Array.Empty<APIMod>(),
-                    };
-
-                    round.Beatmaps.Add(b);
-
-                    flow.Add(new RoundBeatmapRow(round, b, requiredOverlay, allowedOverlay));
+                    });
                 }
 
-                public partial class RoundBeatmapRow : CompositeDrawable
+                protected override OsuRearrangeableListItem<RoundBeatmap> CreateOsuDrawable(RoundBeatmap item)
+                    => new RoundBeatmapRow(round, item, requiredOverlay, allowedOverlay);
+
+                public partial class RoundBeatmapRow : OsuRearrangeableListItem<RoundBeatmap>
                 {
-                    public RoundBeatmap Model { get; }
+                    private readonly TournamentRound round;
+                    private readonly UserModSelectOverlay requiredOverlay;
+                    private readonly FreeModSelectOverlay allowedOverlay;
 
                     [Resolved]
                     protected IAPIProvider API { get; private set; } = null!;
@@ -234,158 +240,161 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
 
                     private readonly Bindable<string> mods = new Bindable<string>(string.Empty);
 
-                    private readonly Container drawableContainer;
-                    private readonly Container downloadButtonContainer;
-                    private readonly RoundBeatmapModEditor modEditor;
-                    private readonly OsuSpriteText freestyleBadge;
-                    private readonly ModDisplay requiredInfoDisplay;
-                    private readonly ModDisplay allowedInfoDisplay;
-                    private readonly OsuSpriteText statsText;
+                    private Container drawableContainer = null!;
+                    private Container downloadButtonContainer = null!;
+                    private RoundBeatmapModEditor modEditor = null!;
+                    private OsuSpriteText freestyleBadge = null!;
+                    private ModDisplay requiredInfoDisplay = null!;
+                    private ModDisplay allowedInfoDisplay = null!;
+                    private OsuSpriteText statsText = null!;
 
                     private CancellationTokenSource? difficultyCts;
 
                     private IBeatmapSetInfo? apiBeatmapSet;
 
-                    public RoundBeatmapRow(TournamentRound team, RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
+                    public RoundBeatmapRow(TournamentRound round, RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
+                        : base(beatmap)
                     {
-                        Model = beatmap;
+                        this.round = round;
+                        this.requiredOverlay = requiredOverlay;
+                        this.allowedOverlay = allowedOverlay;
 
                         Margin = new MarginPadding(10);
 
-                        RelativeSizeAxes = Axes.X;
-                        AutoSizeAxes = Axes.Y;
-
+                        // The item draws the row background (so it also covers the drag handle) and clips its corners.
                         Masking = true;
                         CornerRadius = 5;
+                    }
 
-                        InternalChildren = new Drawable[]
+                    protected override Drawable CreateContent()
+                    {
+                        modEditor = new RoundBeatmapModEditor(Model, requiredOverlay, allowedOverlay)
                         {
-                            new Box
-                            {
-                                Colour = OsuColour.Gray(0.2f),
-                                RelativeSizeAxes = Axes.Both,
-                            },
-                            new FillFlowContainer
-                            {
-                                Margin = new MarginPadding(5),
-                                Padding = new MarginPadding { Right = 215 },
-                                Spacing = new Vector2(5),
-                                Direction = FillDirection.Vertical,
-                                RelativeSizeAxes = Axes.X,
-                                AutoSizeAxes = Axes.Y,
-                                Children = new Drawable[]
-                                {
-                                    new FillFlowContainer
-                                    {
-                                        Spacing = new Vector2(5),
-                                        Direction = FillDirection.Horizontal,
-                                        AutoSizeAxes = Axes.Both,
-                                        Children = new Drawable[]
-                                        {
-                                            new SettingsNumberBox
-                                            {
-                                                LabelText = "Beatmap ID",
-                                                RelativeSizeAxes = Axes.None,
-                                                Width = 200,
-                                                Current = beatmapId,
-                                            },
-                                            new SettingsTextBox
-                                            {
-                                                LabelText = "Mods",
-                                                RelativeSizeAxes = Axes.None,
-                                                Width = 200,
-                                                Current = mods,
-                                            },
-                                            new SettingsButton
-                                            {
-                                                RelativeSizeAxes = Axes.None,
-                                                Width = 120,
-                                                Margin = new MarginPadding(10),
-                                                Text = "Edit mods",
-                                                Action = () => modEditor.FadeTo(1 - modEditor.Alpha, 200),
-                                            },
-                                            drawableContainer = new Container
-                                            {
-                                                Size = new Vector2(100, 70),
-                                            },
-                                        }
-                                    },
-                                    modEditor = new RoundBeatmapModEditor(beatmap, requiredOverlay, allowedOverlay)
-                                    {
-                                        Alpha = 0,
-                                    },
-                                    new FillFlowContainer
-                                    {
-                                        Spacing = new Vector2(8),
-                                        Direction = FillDirection.Horizontal,
-                                        AutoSizeAxes = Axes.Both,
-                                        Children = new Drawable[]
-                                        {
-                                            freestyleBadge = new OsuSpriteText
-                                            {
-                                                Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 14),
-                                            },
-                                            new OsuSpriteText
-                                            {
-                                                Font = OsuFont.GetFont(size: 14),
-                                                Text = "Required:",
-                                            },
-                                            requiredInfoDisplay = new ModDisplay
-                                            {
-                                                Scale = new Vector2(0.4f),
-                                                ExpansionMode = ExpansionMode.AlwaysContracted,
-                                            },
-                                            new OsuSpriteText
-                                            {
-                                                Font = OsuFont.GetFont(size: 14),
-                                                Text = "Allowed:",
-                                            },
-                                            allowedInfoDisplay = new ModDisplay
-                                            {
-                                                Scale = new Vector2(0.4f),
-                                                ExpansionMode = ExpansionMode.AlwaysContracted,
-                                            },
-                                            statsText = new OsuSpriteText
-                                            {
-                                                Font = OsuFont.GetFont(size: 14),
-                                            },
-                                        }
-                                    },
-                                }
-                            },
-                            new FillFlowContainer
-                            {
-                                Anchor = Anchor.CentreRight,
-                                Origin = Anchor.CentreRight,
-                                AutoSizeAxes = Axes.Both,
-                                Direction = FillDirection.Horizontal,
-                                Spacing = new Vector2(5),
-                                Children = new Drawable[]
-                                {
-                                    downloadButtonContainer = new Container
-                                    {
-                                        Anchor = Anchor.Centre,
-                                        Origin = Anchor.Centre,
-                                        AutoSizeAxes = Axes.Both,
-                                    },
-                                    new DangerousSettingsButton
-                                    {
-                                        Anchor = Anchor.Centre,
-                                        Origin = Anchor.Centre,
-                                        RelativeSizeAxes = Axes.None,
-                                        Width = 150,
-                                        Text = "Delete Beatmap",
-                                        Action = () =>
-                                        {
-                                            Expire();
-                                            team.Beatmaps.Remove(beatmap);
-                                        },
-                                    },
-                                }
-                            }
+                            Alpha = 0,
                         };
 
                         modEditor.ModsChanged += () => Schedule(refreshInfo);
+
+                        return new Container
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
+                            {
+                                new FillFlowContainer
+                                {
+                                    Margin = new MarginPadding(5),
+                                    Padding = new MarginPadding { Right = 215 },
+                                    Spacing = new Vector2(5),
+                                    Direction = FillDirection.Vertical,
+                                    RelativeSizeAxes = Axes.X,
+                                    AutoSizeAxes = Axes.Y,
+                                    Children = new Drawable[]
+                                    {
+                                        new FillFlowContainer
+                                        {
+                                            Spacing = new Vector2(5),
+                                            Direction = FillDirection.Horizontal,
+                                            AutoSizeAxes = Axes.Both,
+                                            Children = new Drawable[]
+                                            {
+                                                new SettingsNumberBox
+                                                {
+                                                    LabelText = "Beatmap ID",
+                                                    RelativeSizeAxes = Axes.None,
+                                                    Width = 200,
+                                                    Current = beatmapId,
+                                                },
+                                                new SettingsTextBox
+                                                {
+                                                    LabelText = "Mods",
+                                                    RelativeSizeAxes = Axes.None,
+                                                    Width = 200,
+                                                    Current = mods,
+                                                },
+                                                new SettingsButton
+                                                {
+                                                    RelativeSizeAxes = Axes.None,
+                                                    Width = 120,
+                                                    Margin = new MarginPadding(10),
+                                                    Text = "Edit mods",
+                                                    Action = () => modEditor.FadeTo(1 - modEditor.Alpha, 200),
+                                                },
+                                                drawableContainer = new Container
+                                                {
+                                                    Size = new Vector2(100, 70),
+                                                },
+                                            }
+                                        },
+                                        modEditor,
+                                        new FillFlowContainer
+                                        {
+                                            Spacing = new Vector2(8),
+                                            Direction = FillDirection.Horizontal,
+                                            AutoSizeAxes = Axes.Both,
+                                            Children = new Drawable[]
+                                            {
+                                                freestyleBadge = new OsuSpriteText
+                                                {
+                                                    Font = OsuFont.GetFont(weight: FontWeight.Bold, size: 14),
+                                                },
+                                                new OsuSpriteText
+                                                {
+                                                    Font = OsuFont.GetFont(size: 14),
+                                                    Text = "Required:",
+                                                },
+                                                requiredInfoDisplay = new ModDisplay
+                                                {
+                                                    Scale = new Vector2(0.4f),
+                                                    ExpansionMode = ExpansionMode.AlwaysContracted,
+                                                },
+                                                new OsuSpriteText
+                                                {
+                                                    Font = OsuFont.GetFont(size: 14),
+                                                    Text = "Allowed:",
+                                                },
+                                                allowedInfoDisplay = new ModDisplay
+                                                {
+                                                    Scale = new Vector2(0.4f),
+                                                    ExpansionMode = ExpansionMode.AlwaysContracted,
+                                                },
+                                                statsText = new OsuSpriteText
+                                                {
+                                                    Font = OsuFont.GetFont(size: 14),
+                                                },
+                                            }
+                                        },
+                                    }
+                                },
+                                new FillFlowContainer
+                                {
+                                    Anchor = Anchor.CentreRight,
+                                    Origin = Anchor.CentreRight,
+                                    AutoSizeAxes = Axes.Both,
+                                    Direction = FillDirection.Horizontal,
+                                    Spacing = new Vector2(5),
+                                    Children = new Drawable[]
+                                    {
+                                        downloadButtonContainer = new Container
+                                        {
+                                            Anchor = Anchor.Centre,
+                                            Origin = Anchor.Centre,
+                                            AutoSizeAxes = Axes.Both,
+                                        },
+                                        new DangerousSettingsButton
+                                        {
+                                            Anchor = Anchor.Centre,
+                                            Origin = Anchor.Centre,
+                                            RelativeSizeAxes = Axes.None,
+                                            Width = 150,
+                                            Text = "Delete Beatmap",
+                                            // The list container removes (and disposes) the row once the model entry is gone.
+                                            Action = () => round.Beatmaps.Remove(Model),
+                                        },
+                                    }
+                                },
+                            },
+                        };
                     }
 
                     protected override void LoadComplete()
@@ -397,6 +406,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     [BackgroundDependencyLoader]
                     private void load()
                     {
+                        AddInternal(new Box
+                        {
+                            Colour = OsuColour.Gray(0.2f),
+                            RelativeSizeAxes = Axes.Both,
+                            Depth = float.MaxValue,
+                        });
+
                         beatmapId.Value = Model.ID;
                         beatmapId.BindValueChanged(id =>
                         {
@@ -608,5 +624,34 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
         }
 
         protected override RoundRow CreateDrawable(TournamentRound model) => new RoundRow(model, requiredOverlay, allowedOverlay);
+
+        protected override OsuRearrangeableListContainer<TournamentRound> CreateReorderableList()
+        {
+            var list = new RoundList(CreateDrawable);
+
+            // Dragging rounds around updates the bracket model directly (and keeps external model changes in sync).
+            list.Items.BindTarget = Storage;
+
+            return list;
+        }
+
+        /// <summary>
+        /// Reorderable list of <see cref="RoundRow"/>s, shown in place of the editor's default flow.
+        /// </summary>
+        public partial class RoundList : ExpandedRearrangeableListContainer<TournamentRound>
+        {
+            private readonly Func<TournamentRound, RoundRow> createRow;
+
+            public RoundList(Func<TournamentRound, RoundRow> createRow)
+            {
+                this.createRow = createRow;
+            }
+
+            protected override OsuRearrangeableListItem<TournamentRound> CreateOsuDrawable(TournamentRound item) => createRow(item);
+
+            // Matches the spacing the default editor flow uses between rows.
+            protected override FillFlowContainer<RearrangeableListItem<TournamentRound>> CreateListFillFlowContainer()
+                => base.CreateListFillFlowContainer().With(list => list.Spacing = new Vector2(0, 20));
+        }
     }
 }

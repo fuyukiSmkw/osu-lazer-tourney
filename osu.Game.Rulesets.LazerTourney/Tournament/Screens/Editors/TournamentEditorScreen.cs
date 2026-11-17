@@ -29,8 +29,6 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
         [Resolved]
         private IDialogOverlay? dialogOverlay { get; set; }
 
-        private FillFlowContainer<TDrawable> flow = null!;
-
         [Resolved]
         private TournamentSceneManager? sceneManager { get; set; }
 
@@ -48,6 +46,54 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
         [BackgroundDependencyLoader]
         private void load(OsuColour colours)
         {
+            var content = new Container
+            {
+                RelativeSizeAxes = Axes.X,
+                AutoSizeAxes = Axes.Y,
+                Padding = new MarginPadding(20),
+            };
+
+            var reorderableList = CreateReorderableList();
+
+            if (reorderableList != null)
+            {
+                // The list keeps Storage in sync by itself (dragging moves entries around in it).
+                content.Child = reorderableList;
+            }
+            else
+            {
+                FillFlowContainer<TDrawable> defaultFlow;
+
+                content.Child = defaultFlow = new FillFlowContainer<TDrawable>
+                {
+                    Direction = FillDirection.Vertical,
+                    RelativeSizeAxes = Axes.X,
+                    AutoSizeAxes = Axes.Y,
+                    Spacing = new Vector2(20),
+                };
+
+                Storage.CollectionChanged += (_, args) =>
+                {
+                    switch (args.Action)
+                    {
+                        case NotifyCollectionChangedAction.Add:
+                            Debug.Assert(args.NewItems != null);
+
+                            args.NewItems.Cast<TModel>().ForEach(i => defaultFlow.Add(CreateDrawable(i)));
+                            break;
+
+                        case NotifyCollectionChangedAction.Remove:
+                            Debug.Assert(args.OldItems != null);
+
+                            args.OldItems.Cast<TModel>().ForEach(i => defaultFlow.RemoveAll(d => d.Model == i, true));
+                            break;
+                    }
+                };
+
+                foreach (var model in Storage)
+                    defaultFlow.Add(CreateDrawable(model));
+            }
+
             AddRangeInternal(new Drawable[]
             {
                 new Box
@@ -60,14 +106,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     RelativeSizeAxes = Axes.Both,
                     Anchor = Anchor.TopCentre,
                     Origin = Anchor.TopCentre,
-                    Child = flow = new FillFlowContainer<TDrawable>
-                    {
-                        Direction = FillDirection.Vertical,
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Spacing = new Vector2(20),
-                        Padding = new MarginPadding(20),
-                    },
+                    Child = content,
                 },
                 ControlPanel = new ControlPanel
                 {
@@ -103,31 +142,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                     Action = () => sceneManager?.SetScreen(parentScreen.GetType())
                 });
 
-                flow.Padding = new MarginPadding { Bottom = backButton.Height * 2 };
+                content.Padding = new MarginPadding { Bottom = backButton.Height * 2 };
             }
-
-            Storage.CollectionChanged += (_, args) =>
-            {
-                switch (args.Action)
-                {
-                    case NotifyCollectionChangedAction.Add:
-                        Debug.Assert(args.NewItems != null);
-
-                        args.NewItems.Cast<TModel>().ForEach(i => flow.Add(CreateDrawable(i)));
-                        break;
-
-                    case NotifyCollectionChangedAction.Remove:
-                        Debug.Assert(args.OldItems != null);
-
-                        args.OldItems.Cast<TModel>().ForEach(i => flow.RemoveAll(d => d.Model == i, true));
-                        break;
-                }
-            };
-
-            foreach (var model in Storage)
-                flow.Add(CreateDrawable(model));
         }
 
         protected abstract TDrawable CreateDrawable(TModel model);
+
+        /// <summary>
+        /// Creates a reorderable list to display the rows in place of the default flow, or <c>null</c> to use the flow.
+        /// </summary>
+        /// <remarks>
+        /// The returned list is responsible for keeping <see cref="Storage"/> in sync with its item order
+        /// (bind <see cref="RearrangeableListContainer{TModel}.Items"/> to it).
+        /// </remarks>
+        protected virtual OsuRearrangeableListContainer<TModel>? CreateReorderableList() => null;
     }
 }
