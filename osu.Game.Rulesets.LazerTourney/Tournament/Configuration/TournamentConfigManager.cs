@@ -49,6 +49,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
             base.InitialiseDefaults();
 
             SetDefault(StorageConfig.CurrentTournament, default_tournament);
+            SetDefault(StorageConfig.CheckForUpdatesOnStartup, true);
             SetDefault(StorageConfig.RefereeCallbackPort, 60727);
             SetDefault(StorageConfig.WebSocketPort, 50727);
             SetDefault(StorageConfig.RefereeClientId, string.Empty);
@@ -65,6 +66,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Configuration
     public enum StorageConfig
     {
         CurrentTournament,
+
+        /// <summary>
+        /// Whether to check GitHub for a newer release when the tournament client opens.
+        /// </summary>
+        CheckForUpdatesOnStartup,
 
         /// <summary>
         /// Local port used for the referee OAuth callback listener.

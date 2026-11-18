@@ -26,6 +26,7 @@ using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Users.Drawables;
 using osu.Game.Rulesets.LazerTourney.Graphics;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models.ModMultiplier;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components;
 using osu.Game.Rulesets.Mods;
@@ -46,6 +47,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
 
         [Resolved]
         private UserLookupCache userLookupCache { get; set; } = null!;
+
+        [Resolved]
+        private TournamentStorage tournamentStorage { get; set; } = null!;
 
         [Resolved(canBeNull: true)]
         private INotificationOverlay? notifications { get; set; }
@@ -260,6 +264,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
                                 bigIcon.Rotation += 20;
                             },
                         },
+                        new OsuCheckbox
+                        {
+                            LabelText = "Check for updates on startup",
+                            Current = tournamentStorage.CheckForUpdatesOnStartup,
+                        },
                         new TourneyButton
                         {
                             RelativeSizeAxes = Axes.X,
@@ -373,18 +382,40 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
 
         private async void checkForUpdates()
         {
-            GitHubRelease? release = null;
-
             releaseRequest?.Abort();
-            releaseRequest = new GetGitHubRelease();
-            releaseRequest.Finished += () => release = releaseRequest.ResponseObject ?? null;
-            await releaseRequest.AwaitRequest();
 
-            if (release is null || string.IsNullOrEmpty(release.tagName))
-                return;
+            var request = new GetGitHubRelease();
+            releaseRequest = request;
+
+            GitHubRelease? release = null;
+            string? error = null;
+
+            request.Finished += () => release = request.ResponseObject ?? null;
+
+            try
+            {
+                await request.AwaitRequest();
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+            }
 
             Schedule(() =>
             {
+                // A newer check superseded this one (aborting it above surfaces as an error).
+                if (releaseRequest != request)
+                    return;
+
+                if (error != null)
+                {
+                    notifications?.Post(new SimpleNotification { Text = $"Update check failed: {error}" });
+                    return;
+                }
+
+                if (release is null || string.IsNullOrEmpty(release.tagName))
+                    return;
+
                 if (release.tagName != LazerTourneyRuleset.Version)
                     notifications?.Post(new UpdateAvailableNotification(release));
                 else

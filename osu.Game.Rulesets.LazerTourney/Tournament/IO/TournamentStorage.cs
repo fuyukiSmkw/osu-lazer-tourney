@@ -88,6 +88,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.IO
         }
 
         /// <summary>
+        /// Whether to check GitHub for a newer release when the tournament client opens.
+        /// </summary>
+        public Bindable<bool> CheckForUpdatesOnStartup => TournamentConfigManager.GetBindable<bool>(StorageConfig.CheckForUpdatesOnStartup);
+
+        /// <summary>
         /// Local port used for the referee OAuth callback listener.
         /// </summary>
         public Bindable<int> RefereeCallbackPort => TournamentConfigManager.GetBindable<int>(StorageConfig.RefereeCallbackPort);
