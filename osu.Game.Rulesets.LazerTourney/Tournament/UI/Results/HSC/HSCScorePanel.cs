@@ -38,7 +38,7 @@ using osuTK.Graphics;
 namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
 {
     /// <summary>
-    /// Hello! Shanden Cup (by [SHK]T_T) score panel.
+    /// Hello! Shanden Cup (by [SHK]Fluctuate) score panel.
     /// A single-player card laid out on a fixed 480x360 design canvas, mirrorable for red (left)
     /// and blue (right) spectate cells. The card deliberately draws no background; the parent
     /// <see cref="osu.Game.Screens.Ranking.ResultsScreen"/> is responsible for that.

@@ -62,7 +62,7 @@ Remove `-c Release` for debug build.
 * [EVAST9919/lazer-sandbox](https://github.com/EVAST9919/lazer-sandbox): Reference for ruleset DI structure.
 * [GooGuTeam/g0v0](https://github.com/GooGuTeam/g0v0): V2 results screen
 * [ShikkesoraSIM/torii](https://github.com/ShikkesoraSIM/torii): Legacy results screen
-* *Hello! Shanden Cup* [host & design `[SHK]T_T`](https://osu.ppy.sh/users/13999223), [tourney dev `cdwcgt`](https://github.com/cdwcgt): HSC results screen
+* *Hello! Shanden Cup* [host & design `[SHK]Fluctuate`](https://osu.ppy.sh/users/13999223), [tourney dev `cdwcgt`](https://github.com/cdwcgt): HSC results screen
 
 ## AI Usage Declaration
 

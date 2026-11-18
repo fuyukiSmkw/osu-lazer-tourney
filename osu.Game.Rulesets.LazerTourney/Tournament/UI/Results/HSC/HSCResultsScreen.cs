@@ -16,7 +16,7 @@ using osu.Game.Screens.Ranking;
 namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
 {
     /// <summary>
-    /// Hello! Shanden Cup (by [SHK]T_T) tournament results screen, shared by the showcase
+    /// Hello! Shanden Cup (by [SHK]Fluctuate) tournament results screen, shared by the showcase
     /// replay results and the gameplay spectate results.
     /// </summary>
     /// <remarks>
