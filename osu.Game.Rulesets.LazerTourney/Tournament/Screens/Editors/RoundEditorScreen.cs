@@ -114,7 +114,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                         new FillFlowContainer
                         {
                             Margin = new MarginPadding(5),
-                            Padding = new MarginPadding { Right = 160 },
+                            Padding = new MarginPadding { Right = 40 },
                             Spacing = new Vector2(5),
                             Direction = FillDirection.Full,
                             RelativeSizeAxes = Axes.X,
@@ -174,13 +174,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                 beatmapEditor
                             }
                         },
-                        new DangerousSettingsButton
+                        new DeleteIconButton
                         {
                             Anchor = Anchor.CentreRight,
                             Origin = Anchor.CentreRight,
-                            RelativeSizeAxes = Axes.None,
-                            Width = 150,
-                            Text = "Delete Round",
+                            TooltipText = "Delete Round",
                             // The list container removes (and disposes) the row once the model entry is gone.
                             Action = () => dialogOverlay?.Push(new DeleteRoundDialog(Model, () => ladderInfo.Rounds.Remove(Model)))
                         }
@@ -304,7 +302,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                 new FillFlowContainer
                                 {
                                     Margin = new MarginPadding(5),
-                                    Padding = new MarginPadding { Right = 215 },
+                                    Padding = new MarginPadding { Right = 100 },
                                     Spacing = new Vector2(5),
                                     Direction = FillDirection.Vertical,
                                     RelativeSizeAxes = Axes.X,
@@ -402,13 +400,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                             Origin = Anchor.Centre,
                                             AutoSizeAxes = Axes.Both,
                                         },
-                                        new DangerousSettingsButton
+                                        new DeleteIconButton
                                         {
                                             Anchor = Anchor.Centre,
                                             Origin = Anchor.Centre,
-                                            RelativeSizeAxes = Axes.None,
-                                            Width = 150,
-                                            Text = "Delete Beatmap",
+                                            TooltipText = "Delete Beatmap",
                                             // The list container removes (and disposes) the row once the model entry is gone.
                                             Action = () => round.Beatmaps.Remove(Model),
                                         },

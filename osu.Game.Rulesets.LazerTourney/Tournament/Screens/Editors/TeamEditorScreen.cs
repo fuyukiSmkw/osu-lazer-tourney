@@ -203,12 +203,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                     AutoSizeAxes = Axes.Y,
                                     Children = new Drawable[]
                                     {
-                                        new DangerousSettingsButton
+                                        new DeleteIconButton
                                         {
-                                            Width = 0.2f,
-                                            Text = "Delete Team",
                                             Anchor = Anchor.TopRight,
                                             Origin = Anchor.TopRight,
+                                            TooltipText = "Delete Team",
                                             // The list container removes (and disposes) the row once the model entry is gone.
                                             Action = () => dialogOverlay?.Push(new DeleteTeamDialog(Model, () => ladderInfo.Teams.Remove(Model))),
                                         },
@@ -348,13 +347,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                         },
                                     }
                                 },
-                                new DangerousSettingsButton
+                                new DeleteIconButton
                                 {
                                     Anchor = Anchor.CentreRight,
                                     Origin = Anchor.CentreRight,
-                                    RelativeSizeAxes = Axes.None,
-                                    Width = 150,
-                                    Text = "Delete Player",
+                                    TooltipText = "Delete Player",
                                     // The list container removes (and disposes) the row once the model entry is gone.
                                     Action = () => team.Players.Remove(Model),
                                 }

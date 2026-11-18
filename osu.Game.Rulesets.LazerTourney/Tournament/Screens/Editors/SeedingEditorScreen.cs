@@ -77,7 +77,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                         new FillFlowContainer
                         {
                             Margin = new MarginPadding(5),
-                            Padding = new MarginPadding { Right = 160 },
+                            Padding = new MarginPadding { Right = 40 },
                             Spacing = new Vector2(5),
                             Direction = FillDirection.Full,
                             RelativeSizeAxes = Axes.X,
@@ -106,13 +106,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                 beatmapEditor
                             }
                         },
-                        new DangerousSettingsButton
+                        new DeleteIconButton
                         {
                             Anchor = Anchor.CentreRight,
                             Origin = Anchor.CentreRight,
-                            RelativeSizeAxes = Axes.None,
-                            Width = 150,
-                            Text = "Delete result",
+                            TooltipText = "Delete result",
                             // The list container removes (and disposes) the row once the model entry is gone.
                             Action = () => team.SeedingResults.Remove(Model),
                         },
@@ -222,7 +220,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                 new FillFlowContainer
                                 {
                                     Margin = new MarginPadding(5),
-                                    Padding = new MarginPadding { Right = 160 },
+                                    Padding = new MarginPadding { Right = 40 },
                                     Spacing = new Vector2(5),
                                     Direction = FillDirection.Horizontal,
                                     AutoSizeAxes = Axes.Both,
@@ -255,13 +253,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                         },
                                     }
                                 },
-                                new DangerousSettingsButton
+                                new DeleteIconButton
                                 {
                                     Anchor = Anchor.CentreRight,
                                     Origin = Anchor.CentreRight,
-                                    RelativeSizeAxes = Axes.None,
-                                    Width = 150,
-                                    Text = "Delete Beatmap",
+                                    TooltipText = "Delete Beatmap",
                                     // The list container removes (and disposes) the row once the model entry is gone.
                                     Action = () => result.Beatmaps.Remove(Model),
                                 }
