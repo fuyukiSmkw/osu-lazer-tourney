@@ -80,25 +80,27 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
 
             if (info == null || working!.Beatmap.HitObjects.Count == 0)
             {
-                SongBar.SetSource(null, null, Array.Empty<Mod>(), Array.Empty<Mod>(), null);
+                SongBar.SetSource(null, null, Array.Empty<Mod>(), Array.Empty<Mod>(), null, null);
                 return;
             }
 
             var ruleset = globalRuleset.Value;
             Mod[] mods = globalMods.Value.ToArray();
+            var round = CurrentMatch.Value?.Round.Value;
 
             RoundBeatmap? poolMatch = null;
 
             if (info.OnlineID > 0)
-                poolMatch = CurrentMatch.Value?.Round.Value?.Beatmaps.FirstOrDefault(b => b.ID == info.OnlineID);
+                poolMatch = round?.Beatmaps.FirstOrDefault(b => b.ID == info.OnlineID);
 
-            SongBar.SetSource(info, ruleset, mods, mods, poolMatch);
+            SongBar.SetSource(info, ruleset, mods, mods, poolMatch, round);
             SongBar.FadeInFromZero(300, Easing.OutQuint);
         }
 
         private void setFromRoomItem(IBeatmapInfo? info, RulesetInfo? ruleset, MultiplayerPlaylistItem? item)
         {
             Mod[] required = Array.Empty<Mod>();
+            var round = CurrentMatch.Value?.Round.Value;
 
             if (ruleset != null && item != null)
                 required = RoundBeatmap.InstantiateMods(item.RequiredMods.ToArray(), ruleset.CreateInstance());
@@ -106,12 +108,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens
             RoundBeatmap? poolMatch = null;
 
             if (item != null)
-            {
-                var round = CurrentMatch.Value?.Round.Value;
                 poolMatch = round?.Beatmaps.FirstOrDefault(b => RoundBeatmap.Matches(item, b, LadderInfo.Ruleset.Value?.OnlineID));
-            }
 
-            SongBar.SetSource(info, ruleset, required, required, poolMatch);
+            SongBar.SetSource(info, ruleset, required, required, poolMatch, round);
             SongBar.FadeInFromZero(300, Easing.OutQuint);
         }
     }
