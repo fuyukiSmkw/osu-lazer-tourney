@@ -28,10 +28,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
     /// </remarks>
     public partial class HSCResultsScreen : ResultsScreen
     {
-        private readonly TeamColour teamColour;
+        private readonly TeamColour? teamColour;
         private readonly int? placement;
 
-        public HSCResultsScreen(ScoreInfo score, TeamColour teamColour = TeamColour.Red, int? placement = null)
+        public HSCResultsScreen(ScoreInfo score, TeamColour? teamColour = null, int? placement = null)
             : base(score)
         {
             this.teamColour = teamColour;
@@ -63,7 +63,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
         /// </summary>
         private partial class HSCResultsContent : Container, IKeyBindingHandler<GlobalAction>
         {
-            public HSCResultsContent(ScoreInfo? score, TeamColour teamColour, int? placement)
+            public HSCResultsContent(ScoreInfo? score, TeamColour? teamColour = null, int? placement = null)
             {
                 RelativeSizeAxes = Axes.Both;
 

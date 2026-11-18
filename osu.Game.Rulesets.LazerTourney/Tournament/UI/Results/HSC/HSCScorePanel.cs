@@ -75,9 +75,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
         private const float combo_card_width = 198;
         private const float combo_card_height = 44;
 
-        private const float backplate_x = 350;
+        private const float backplate_x = 330 - 70;
         private const float backplate_y = 115;
-        private const float backplate_width = 104;
+        private const float backplate_width = 124 + 70;
         private const float backplate_height = 157;
 
         private const float ring_size = 210;
@@ -104,7 +104,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
         private const float mods_outer_margin = 7;
 
         private readonly ScoreInfo score;
-        private readonly TeamColour teamColour;
+        private readonly TeamColour? teamColour;
         private readonly int? placement;
         private readonly DateTimeOffset playedAt;
 
@@ -123,7 +123,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
         /// </summary>
         private int maximumAchievableCombo => score.GetMaximumAchievableCombo();
 
-        public HSCScorePanel(ScoreInfo score, TeamColour teamColour = TeamColour.Red, int? placement = null)
+        public HSCScorePanel(ScoreInfo score, TeamColour? teamColour = null, int? placement = null)
         {
             this.score = score;
             this.teamColour = teamColour;
@@ -155,9 +155,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
             if (realmAccess.Run(r => r.Find<BeatmapInfo>(beatmap.ID)) != null)
                 starDifficulty = beatmapDifficultyCache.GetDifficultyAsync(beatmap, score.Ruleset, score.Mods).GetResultSafely() ?? starDifficulty;
 
-            Color4 ribbonColour = TournamentColours.GetTeamColour(teamColour, ladderInfo).TryExtractSingleColour(out SRGBColour single)
-                ? single
-                : Color4.White;
+            Color4 ribbonColour = new OsuColour().GreySkyDarker;
+            if (teamColour is TeamColour tc)
+                if (TournamentColours.GetTeamColour(tc, ladderInfo).TryExtractSingleColour(out SRGBColour single))
+                    ribbonColour = single;
 
             List<HitResultDisplayStatistic> statistics = score.GetStatisticsForDisplay().Where(s => s.Result <= HitResult.Perfect).ToList();
 
@@ -171,13 +172,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
                 {
                     // Grey backplate behind the ring. The ring is drawn on top, leaving a crescent
                     // visible on the inner side of the cell.
-                    createRoundedBox(backplate_x - 20, backplate_y, backplate_width + 20, backplate_height, 50, card_colour),
+                    createRoundedBox(backplate_x, backplate_y, backplate_width, backplate_height, 50, card_colour),
 
                     // Judgement and combo/PP cards. Both are rounded trapezoids in the reference:
                     // the judgement card's outer edge slopes top-inward/bottom-outward, while the
                     // combo/PP card's outer edge slopes top-outward/bottom-inward.
-                    createTrapezoidCard(stats_card_x + 8, stats_card_y, stats_card_width + 30, stats_card_height, 12, 0.13f, card_colour),
-                    createTrapezoidCard(combo_card_x - 3, combo_card_y, combo_card_width + 20, combo_card_height, 6, -0.28f, card_colour),
+                    createTrapezoidCard(stats_card_x + 8, stats_card_y, stats_card_width + 70, stats_card_height, 12, 0.13f, card_colour),
+                    createTrapezoidCard(combo_card_x - 3, combo_card_y, combo_card_width + 70, combo_card_height, 6, -0.28f, card_colour),
 
                     createStatistics(statistics, colours),
                     createComboAndPerformanceCard(),
@@ -709,7 +710,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
             {
                 Anchor = Anchor.TopCentre,
                 Origin = Anchor.TopCentre,
-                Position = new Vector2(0, 300),
+                Position = new Vector2(0, 303),
                 Size = new Vector2(440, 20),
                 Masking = true,
                 Child = new MarqueeContainer
@@ -736,11 +737,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
             {
                 Anchor = Anchor.TopCentre,
                 Origin = Anchor.TopCentre,
-                Position = new Vector2(0, 320),
+                Position = new Vector2(0, 318),
                 MaxWidth = 440,
                 Text = mapper,
                 Font = OsuFont.Torus.With(size: 9, weight: FontWeight.Regular),
-                Colour = secondary_text_colour,
+                Colour = Color4.White,
                 ShowTooltip = false,
             };
         }
@@ -794,7 +795,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC
                     },
                     difficultyTextHost = new Container
                     {
-                        Position = new Vector2(difficulty_pill_padding / 2, 0), // centre
+                        Position = new Vector2(2, 0), // centre
                         Size = new Vector2(0, bottom_row_height),
                         Anchor = Anchor.Centre,
                         Origin = Anchor.Centre,
