@@ -10,6 +10,7 @@ using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors;
+using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components;
 using osu.Game.Tests.Visual;
 using osuTK;
 using osuTK.Input;
@@ -25,9 +26,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
         private SeedingResult[] created = Array.Empty<SeedingResult>();
         private SeedingBeatmap[] originalBeatmaps = Array.Empty<SeedingBeatmap>();
 
+        private OsuScrollContainer page = null!;
+
         private SeedingEditorScreen.SeedingResultList list = null!;
 
         private SeedingEditorScreen.SeedingResultRow[] rows => list.ChildrenOfType<SeedingEditorScreen.SeedingResultRow>().ToArray();
+
+        private Vector2 dragStart;
 
         [SetUpSteps]
         public void SetUpSteps()
@@ -54,7 +59,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
                 {
                     RelativeSizeAxes = Axes.Both,
                     CachedDependencies = new[] { (typeof(LadderInfo), (object)ladder) },
-                    Child = new OsuScrollContainer
+                    Child = page = new OsuScrollContainer
                     {
                         RelativeSizeAxes = Axes.Both,
                         Child = list = new SeedingEditorScreen.SeedingResultList(result => new SeedingEditorScreen.SeedingResultRow(team, result)),
@@ -122,6 +127,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
 
             AddAssert("first beatmap moved to the end", () =>
                 rows[0].Model.Beatmaps.SequenceEqual(new[] { originalBeatmaps[1], originalBeatmaps[2], originalBeatmaps[0] }));
+        }
+
+        [Test]
+        public void TestDraggingBeatmapsScrollsPageInsteadOfList()
+        {
+            AddUntilStep("page can scroll", () => page.ScrollableExtent > 0);
+            AddUntilStep("nested lists cannot scroll", () => list.ChildrenOfType<ExpandedScrollContainer>().All(s => s.ScrollableExtent == 0));
+
+            AddStep("press gap between beatmap rows", () =>
+            {
+                // The 20px gap is the two rows' margins, i.e. not covered by either row's content.
+                dragStart = beatmapRows(rows[0])[0].ScreenSpaceDrawQuad.BottomLeft + new Vector2(100, 5);
+                InputManager.MoveMouseTo(dragStart);
+                InputManager.PressButton(MouseButton.Left);
+            });
+
+            AddStep("drag up", () => InputManager.MoveMouseTo(dragStart - new Vector2(0, 150)));
+
+            AddUntilStep("page scrolled down", () => page.Current > 0);
+            AddAssert("no nested list scrolled", () => list.ChildrenOfType<ExpandedScrollContainer>().All(s => s.Current == 0));
+
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
         }
 
         [Test]

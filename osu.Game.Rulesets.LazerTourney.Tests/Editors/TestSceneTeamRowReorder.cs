@@ -6,10 +6,12 @@ using System.Linq;
 using NUnit.Framework;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Input;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors;
+using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components;
 using osu.Game.Tests.Visual;
 using osuTK;
 using osuTK.Input;
@@ -23,9 +25,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
 
         private TournamentTeam[] created = Array.Empty<TournamentTeam>();
 
+        private OsuScrollContainer page = null!;
+
         private TeamEditorScreen.TeamList list = null!;
 
         private TeamEditorScreen.TeamRow[] rows => list.ChildrenOfType<TeamEditorScreen.TeamRow>().ToArray();
+
+        private ExpandedScrollContainer innerScroll => list.ChildrenOfType<ExpandedScrollContainer>().Single();
+
+        private Vector2 dragStart;
 
         [SetUpSteps]
         public void SetUpSteps()
@@ -43,7 +51,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
                 {
                     RelativeSizeAxes = Axes.Both,
                     CachedDependencies = new[] { (typeof(LadderInfo), (object)ladder) },
-                    Child = new OsuScrollContainer
+                    Child = page = new OsuScrollContainer
                     {
                         RelativeSizeAxes = Axes.Both,
                         Child = list = new TeamEditorScreen.TeamList(team => new TeamEditorScreen.TeamRow(team, null!)),
@@ -90,6 +98,49 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
         }
 
         [Test]
+        public void TestMouseDragScrollsPageInsteadOfList()
+        {
+            AddStep("add teams to make page scrollable", addExtraTeams);
+            AddUntilStep("extra rows loaded", () => rows.Length == 9 && rows.All(r => r.IsLoaded));
+            AddUntilStep("page can scroll", () => page.ScrollableExtent > 0);
+
+            AddStep("press row background", () =>
+            {
+                dragStart = rowDragPoint();
+                InputManager.MoveMouseTo(dragStart);
+                InputManager.PressButton(MouseButton.Left);
+            });
+
+            AddStep("drag up", () => InputManager.MoveMouseTo(dragStart - new Vector2(0, 150)));
+
+            AddUntilStep("page scrolled down", () => page.Current > 0);
+            AddAssert("inner list did not scroll", () => innerScroll.Current == 0);
+
+            AddStep("release", () => InputManager.ReleaseButton(MouseButton.Left));
+        }
+
+        [Test]
+        public void TestTouchDragScrollsPageInsteadOfList()
+        {
+            AddStep("add teams to make page scrollable", addExtraTeams);
+            AddUntilStep("extra rows loaded", () => rows.Length == 9 && rows.All(r => r.IsLoaded));
+            AddUntilStep("page can scroll", () => page.ScrollableExtent > 0);
+
+            AddStep("touch row background", () =>
+            {
+                dragStart = rowDragPoint();
+                InputManager.BeginTouch(new Touch(TouchSource.Touch1, dragStart));
+            });
+
+            AddStep("drag touch up", () => InputManager.MoveTouchTo(new Touch(TouchSource.Touch1, dragStart - new Vector2(0, 150))));
+
+            AddUntilStep("page scrolled down", () => page.Current > 0);
+            AddAssert("inner list did not scroll", () => innerScroll.Current == 0);
+
+            AddStep("end touch", () => InputManager.EndTouch(new Touch(TouchSource.Touch1, dragStart - new Vector2(0, 150))));
+        }
+
+        [Test]
         public void TestModelStaysInSync()
         {
             AddStep("reorder via list", () => list.Items.Move(0, 2));
@@ -100,6 +151,14 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
 
             AddStep("remove team from model", () => ladder.Teams.RemoveAt(0));
             AddUntilStep("row removed with team", () => rows.Length == 3 && rows.All(r => r.Model != created[1]));
+        }
+
+        private Vector2 rowDragPoint() => rows[0].ScreenSpaceDrawQuad.BottomLeft + new Vector2(40, -20);
+
+        private void addExtraTeams()
+        {
+            for (int i = 4; i <= 9; i++)
+                ladder.Teams.Add(createTeam($"Team {i}", $"T{i}"));
         }
 
         private static TournamentTeam createTeam(string name, string acronym)

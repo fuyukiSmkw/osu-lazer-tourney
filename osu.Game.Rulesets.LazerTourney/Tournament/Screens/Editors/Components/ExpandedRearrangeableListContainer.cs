@@ -108,5 +108,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components
 
         // Wheel input is left to the page.
         protected override bool OnScroll(ScrollEvent e) => false;
+
+        // Drag-scrolling is left to the page as well. This also covers touch scrolling, which the framework maps to
+        // mouse drags: without this, dragging inside the list scrolls the (non-scrollable) inner viewport and the
+        // page never moves.
+        protected override bool OnDragStart(DragStartEvent e) => false;
     }
 }
