@@ -10,6 +10,7 @@ using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Shapes;
+using osu.Framework.Testing;
 using osu.Game.Beatmaps;
 using osu.Game.Beatmaps.Drawables;
 using osu.Game.Graphics;
@@ -216,7 +217,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                 }
 
                 protected override OsuRearrangeableListItem<RoundBeatmap> CreateOsuDrawable(RoundBeatmap item)
-                    => new RoundBeatmapRow(round, item, requiredOverlay, allowedOverlay);
+                    => new RoundBeatmapRow(round, item, requiredOverlay, allowedOverlay, refreshPickLabelling);
+
+                /// <summary>
+                /// Recomputes the inferred pick labels of all rows after a map's classification label changes.
+                /// </summary>
+                private void refreshPickLabelling()
+                {
+                    foreach (var row in this.ChildrenOfType<RoundBeatmapRow>())
+                        row.RefreshPickEditor();
+                }
 
                 public partial class RoundBeatmapRow : OsuRearrangeableListItem<RoundBeatmap>
                 {
@@ -240,9 +250,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
 
                     private readonly Bindable<string> mods = new Bindable<string>(string.Empty);
 
+                    private readonly Action pickInferenceChanged;
+
                     private Container drawableContainer = null!;
                     private Container downloadButtonContainer = null!;
                     private RoundBeatmapModEditor modEditor = null!;
+                    private RoundBeatmapPickEditor? pickEditor;
                     private OsuSpriteText freestyleBadge = null!;
                     private ModDisplay requiredInfoDisplay = null!;
                     private ModDisplay allowedInfoDisplay = null!;
@@ -252,12 +265,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
 
                     private IBeatmapSetInfo? apiBeatmapSet;
 
-                    public RoundBeatmapRow(TournamentRound round, RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay)
+                    public RoundBeatmapRow(TournamentRound round, RoundBeatmap beatmap, UserModSelectOverlay requiredOverlay, FreeModSelectOverlay allowedOverlay, Action pickInferenceChanged)
                         : base(beatmap)
                     {
                         this.round = round;
                         this.requiredOverlay = requiredOverlay;
                         this.allowedOverlay = allowedOverlay;
+                        this.pickInferenceChanged = pickInferenceChanged;
 
                         Margin = new MarginPadding(10);
 
@@ -274,6 +288,12 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                         };
 
                         modEditor.ModsChanged += () => Schedule(refreshInfo);
+
+                        pickEditor = new RoundBeatmapPickEditor(round, Model)
+                        {
+                            RelativeSizeAxes = Axes.None,
+                            Width = 100,
+                        };
 
                         return new Container
                         {
@@ -309,9 +329,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                                                 {
                                                     LabelText = "Mods",
                                                     RelativeSizeAxes = Axes.None,
-                                                    Width = 200,
+                                                    Width = 140,
                                                     Current = mods,
                                                 },
+                                                pickEditor,
                                                 new SettingsButton
                                                 {
                                                     RelativeSizeAxes = Axes.None,
@@ -461,7 +482,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                         }, true);
 
                         mods.Value = Model.Mods;
-                        mods.BindValueChanged(modString => Model.Mods = modString.NewValue);
+                        mods.BindValueChanged(modString =>
+                        {
+                            Model.Mods = modString.NewValue;
+                            pickInferenceChanged();
+                        });
                     }
 
                     private void updatePanel() => Schedule(() =>
@@ -545,6 +570,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                             }
                         }
                     }
+
+                    /// <summary>
+                    /// Refreshes the inferred pick label (used when another map in the same round changes its Mods).
+                    /// </summary>
+                    public void RefreshPickEditor() => pickEditor?.Refresh();
 
                     /// <summary>
                     /// Refreshes the gameplay-mod displays and recomputes adjusted stats.

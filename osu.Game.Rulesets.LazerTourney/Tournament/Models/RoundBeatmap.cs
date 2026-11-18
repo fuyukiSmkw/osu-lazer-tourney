@@ -22,6 +22,15 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         public string Mods = string.Empty;
 
+        /// <summary>
+        /// Explicit pick label for this beatmap (e.g. "HD3"), or <c>null</c> to use the inferred label.
+        /// The inferred label combines <see cref="Mods"/> with this map's position among maps sharing
+        /// the same label in its round (see <see cref="GetInferredPick"/>).
+        /// Null values are omitted from bracket.json.
+        /// </summary>
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string? Pick;
+
         [JsonProperty("BeatmapInfo")]
         public TournamentBeatmap? Beatmap;
 
@@ -57,6 +66,27 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Models
         /// </summary>
         [JsonIgnore]
         public APIMod[] SafeAllowedMods => AllowedMods ?? Array.Empty<APIMod>();
+
+        /// <summary>
+        /// The label inferred for this map when <see cref="Pick"/> is null.
+        /// Combines the classification label (<see cref="Mods"/>) with this map's 1-based position
+        /// among maps sharing the same label in <paramref name="round"/> (e.g. the third HD map is "HD3").
+        /// </summary>
+        public string GetInferredPick(TournamentRound round)
+        {
+            int index = 1;
+
+            foreach (RoundBeatmap beatmap in round.Beatmaps)
+            {
+                if (ReferenceEquals(beatmap, this))
+                    break;
+
+                if (string.Equals(beatmap.Mods, Mods, StringComparison.Ordinal))
+                    index++;
+            }
+
+            return $"{Mods}{index}";
+        }
 
         /// <summary>
         /// Custom mod-multiplier rule for this beatmap, as ModMult source text.
