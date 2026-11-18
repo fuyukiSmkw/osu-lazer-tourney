@@ -42,6 +42,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
         private const float base_icon_scale = 4f;
         private const float icon_box_size = 110f;
 
+        private const float user_card_width = 300;
+        private const float user_card_height = 150;
+        private const float user_card_spacing = 10;
+        private const int users_per_row = 4;
+
         private LazerTourneyIcon bigIcon = null!;
         private float iconScale = base_icon_scale;
 
@@ -364,10 +369,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
 
         private static FillFlowContainer userFlow() => new FillFlowContainer
         {
-            RelativeSizeAxes = Axes.X,
+            Width = users_per_row * user_card_width + (users_per_row - 1) * user_card_spacing,
             AutoSizeAxes = Axes.Y,
-            Direction = FillDirection.Horizontal,
-            Spacing = new Vector2(10),
+            Direction = FillDirection.Full,
+            Spacing = new Vector2(user_card_spacing),
         };
 
         private static OsuSpriteText sectionHeader(string text) => new OsuSpriteText
@@ -510,8 +515,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
         {
             public UserCard(APIUser user, string note)
             {
-                Width = 250;
-                Height = 150;
+                Width = user_card_width;
+                Height = user_card_height;
                 Masking = true;
                 CornerRadius = 8;
 
