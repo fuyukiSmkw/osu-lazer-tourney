@@ -4,6 +4,7 @@
 using osu.Framework.Allocation;
 using osu.Framework.Screens;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Legacy;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
@@ -92,6 +93,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Showcase
                     AllowRetry = false,
                 },
                 ResultScreenStyle.Legacy => new LegacyResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.HSC => new HSCResultsScreen(score)
                 {
                     AllowWatchingReplay = false,
                     AllowRetry = false,

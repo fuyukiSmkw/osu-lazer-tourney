@@ -11,6 +11,7 @@ using osu.Framework.Logging;
 using osu.Game.Beatmaps;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Scoring;
 using osu.Game.Screens;
@@ -36,6 +37,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// Raised after <see cref="Player.StartGameplay"/> is called on <see cref="Player"/>.
         /// </summary>
         public event Action? OnGameplayStarted;
+
+        /// <summary>
+        /// Raised when the loaded player is about to show its results screen. At this point the
+        /// replay has played out to the end (including any storyboard outro) and the clock is no
+        /// longer needed to advance it.
+        /// </summary>
+        public event Action? OnResultsShown;
 
         /// <summary>
         /// Whether a <see cref="Player"/> is loaded in the area.
@@ -93,6 +101,16 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         private readonly Container gameplayContent;
         private readonly LoadingLayer loadingLayer;
         private OsuScreenStack? stack;
+
+        /// <summary>
+        /// Team side this play belongs to. Used by results screens that mirror their layout.
+        /// </summary>
+        public TeamColour TeamColour { get; init; } = TeamColour.Red;
+
+        /// <summary>
+        /// Optional provider for this play's placement among all users in the room.
+        /// </summary>
+        public Func<int?>? PlacementProvider { get; init; }
 
         public TournamentPlayerArea(int userId, SpectatorPlayerClock clock, IAggregateAudioAdjustment? masterAdjustments = null)
         {
@@ -159,6 +177,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                 var player = new TournamentSpectatorPlayer(Score, SpectatorPlayerClock)
                 {
                     ScoreWeight = ScoreWeight,
+                    TeamColour = TeamColour,
+                    PlacementProvider = PlacementProvider,
                 };
                 player.OnGameplayStarted += () =>
                 {
@@ -167,6 +187,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     GameplayStatePublic = player.GameplayStatePublic;
                     OnGameplayStarted?.Invoke();
                 };
+
+                player.OnShowingResults += () => OnResultsShown?.Invoke();
 
                 clockAdjustmentsFromMods.BindAdjustments(player.ClockAdjustmentsFromMods);
 

@@ -1,6 +1,7 @@
 // Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -8,6 +9,7 @@ using osu.Framework.Graphics;
 using osu.Framework.Testing;
 using osu.Game.Graphics.Containers;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
+using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.HSC;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Legacy;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.Simple;
 using osu.Game.Rulesets.LazerTourney.Tournament.UI.Results.V2;
@@ -35,6 +37,17 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         public double ScoreWeight { get; set; } = 1;
 
         /// <summary>
+        /// Team side this play belongs to. Used by results screens that mirror their layout.
+        /// </summary>
+        public TeamColour TeamColour { get; init; } = TeamColour.Red;
+
+        /// <summary>
+        /// Optional provider for this play's placement among all users in the room.
+        /// Evaluated when the results screen is created.
+        /// </summary>
+        public Func<int?>? PlacementProvider { get; init; }
+
+        /// <summary>
         /// Public access to the score processor for external consumers.
         /// </summary>
         public ScoreProcessor ScoreProcessorPublic => ScoreProcessor;
@@ -51,9 +64,25 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
         /// </summary>
         public GameplayState GameplayStatePublic => GameplayState;
 
+        private readonly SpectatorPlayerClock spectatorPlayerClock;
+
         public TournamentSpectatorPlayer(Score score, SpectatorPlayerClock clock)
             : base(score, clock)
         {
+            spectatorPlayerClock = clock;
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            // The base class keeps an empty replay waiting forever. That is correct while frames are
+            // still streaming in, but once the live player passed there is nothing left to receive:
+            // waiting would freeze the clock before the map end and suppress the results screen.
+            spectatorPlayerClock.WaitingOnFrames = SpectatorFrameWait.ShouldWait(
+                DrawableRuleset.FrameStableClock.WaitingOnFrames.Value,
+                Score.Replay.Frames.Count,
+                Score.Replay.HasReceivedAllFrames);
         }
 
         [Resolved]
@@ -110,6 +139,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Gameplay.Components
                     AllowRetry = false,
                 },
                 ResultScreenStyle.Legacy => new LegacyResultsScreen(score)
+                {
+                    AllowWatchingReplay = false,
+                    AllowRetry = false,
+                },
+                ResultScreenStyle.HSC => new HSCResultsScreen(score, TeamColour, PlacementProvider?.Invoke())
                 {
                     AllowWatchingReplay = false,
                     AllowRetry = false,

@@ -15,6 +15,7 @@ using osu.Framework.Testing;
 using osu.Game.Graphics.Cursor;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Overlays;
+using osu.Game.Rulesets.LazerTourney.Online;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament
@@ -43,6 +44,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         [Resolved]
         private OsuGame game { get; set; } = null!;
+
+        [Resolved(canBeNull: true)]
+        private INotificationOverlay? notifications { get; set; }
+
         private NotificationOverlayToastTray? toastTray;
         private float originalToastTrayWidth;
         private bool toastTrayNarrowed;
@@ -237,6 +242,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
             base.LoadComplete();
             narrowToastTray();
 
+            if (Storage.CheckForUpdatesOnStartup.Value)
+                checkForUpdatesOnStartup();
+
             // Alt+F4 / window close button: route through the normal exit path and restore
             // the user's settings immediately, as the debounced background save might not
             // flush before shutdown. (Update thread by contract of the event.)
@@ -253,6 +261,28 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
         private void onHostExitRequested()
         {
             ExitTournament();
+        }
+
+        /// <summary>
+        /// Checks GitHub for a newer release once on entry. Failures are only logged: the check is a
+        /// convenience and must never interrupt the tournament client.
+        /// </summary>
+        private async void checkForUpdatesOnStartup()
+        {
+            try
+            {
+                var request = new GetGitHubRelease();
+                GitHubRelease? release = await request.AwaitRequest().ConfigureAwait(false);
+
+                if (release?.tagName == null || release.tagName == LazerTourneyRuleset.Version)
+                    return;
+
+                Schedule(() => notifications?.Post(new UpdateAvailableNotification(release)));
+            }
+            catch (Exception e)
+            {
+                Logger.Log($"Startup update check failed: {e.Message}");
+            }
         }
 
         /// <summary>

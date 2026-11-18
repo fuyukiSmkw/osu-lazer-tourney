@@ -43,6 +43,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         private FillFlowContainer statsLeft = null!;
         private FillFlowContainer statsRight = null!;
         private Container panelHolder = null!;
+        private TournamentSpriteText pickText = null!;
+
+        private string pickLabel = string.Empty;
 
         /// <summary>
         /// Sets the displayed source. Star rating is recalculated live via
@@ -54,8 +57,9 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
         /// <param name="mods">Gameplay mods affecting star rating and attributes (room required mods).</param>
         /// <param name="requiredMods">Mods for the required-mods icon row (room required mods).</param>
         /// <param name="poolMatch">Full-equality mappool match for the category mod icon, if any.</param>
+        /// <param name="poolRound">The round containing <paramref name="poolMatch"/>, if any.</param>
         /// <remarks>Both mod lists are room required mods per tournament decision.</remarks>
-        public void SetSource(IBeatmapInfo? beatmapInfo, RulesetInfo? rulesetInfo, IReadOnlyList<Mod> mods, IReadOnlyList<Mod> requiredMods, RoundBeatmap? poolMatch)
+        public void SetSource(IBeatmapInfo? beatmapInfo, RulesetInfo? rulesetInfo, IReadOnlyList<Mod> mods, IReadOnlyList<Mod> requiredMods, RoundBeatmap? poolMatch, TournamentRound? poolRound)
         {
             beatmap = beatmapInfo;
             ruleset = rulesetInfo;
@@ -78,6 +82,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                 panel.SetRequiredMods(requiredMods.ToArray());
             }
 
+            updatePick(poolMatch, poolRound);
             updateStarRating();
             updateStats();
         }
@@ -175,6 +180,13 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
                                                         Anchor = Anchor.CentreRight,
                                                         Origin = Anchor.CentreRight,
                                                     },
+                                                    pickText = new TournamentSpriteText
+                                                    {
+                                                        Anchor = Anchor.CentreLeft,
+                                                        Origin = Anchor.CentreLeft,
+                                                        Margin = new MarginPadding { Horizontal = 15 },
+                                                        Font = OsuFont.GetFont(typeface: Typeface.TorusAlternate, size: 30, weight: FontWeight.Bold),
+                                                    },
                                                 }
                                             },
                                         },
@@ -195,7 +207,21 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             };
 
             Expanded = true;
+            pickText.Text = pickLabel;
             updateStats();
+        }
+
+        /// <summary>
+        /// Updates the pick label shown for the current mappool entry.
+        /// Falls back to the inferred label when no explicit pick is stored.
+        /// </summary>
+        private void updatePick(RoundBeatmap? poolMatch, TournamentRound? poolRound)
+        {
+            pickLabel = poolMatch != null && poolRound != null
+                ? poolMatch.Pick ?? poolMatch.GetInferredPick(poolRound)
+                : string.Empty;
+
+            pickText?.Text = pickLabel;
         }
 
         /// <summary>
@@ -264,10 +290,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
             string srExtra = "";
 
-            if (mods.Any(x => x is ModHardRock) || mods.Any(x => x is ModDoubleTime))
+            /* if (mods.Any(x => x is ModHardRock) || mods.Any(x => x is ModDoubleTime))
             {
                 srExtra = "*";
-            }
+            } */
 
             (string heading, string content)[] stats;
 

@@ -3,10 +3,8 @@
 
 using System;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using osu.Framework.Graphics;
-using osu.Framework.IO.Stores;
-using osu.Framework.Logging;
+using System.Threading;
+using System.Threading.Tasks;
 using osu.Framework.Screens;
 using osu.Framework.Testing;
 using osu.Game.Overlays;
@@ -23,12 +21,17 @@ namespace osu.Game.Rulesets.LazerTourney.Startup;
 /// </summary>
 public static class TournamentLauncher
 {
-    private static readonly ConditionalWeakTable<OsuGame, object> resource_store_added = new();
+    private static int sentry_close_started;
 
     /// <summary>
-    /// Adds the plugin's embedded resources (once per game instance), disables Sentry for this session
-    /// and pushes the tournament screen. Must be called from the update thread.
+    /// Disables Sentry for this session and pushes the tournament screen.
+    /// Must be called from the update thread.
     /// </summary>
+    /// <remarks>
+    /// The plugin's embedded resources are exposed through
+    /// <see cref="LazerTourneyRuleset.CreateResourceStore"/> instead of being added to the
+    /// host game's global resource store here.
+    /// </remarks>
     /// <returns><see langword="true"/> if the tournament screen was pushed.</returns>
     public static bool TryLaunch(OsuGame game)
     {
@@ -38,30 +41,7 @@ public static class TournamentLauncher
         if (game.ScreenStack.CurrentScreen is not MainMenu)
             return false;
 
-        try
-        {
-            resource_store_added.GetValue(game, _ =>
-            {
-                game.Resources.AddStore(new DllResourceStore(typeof(LazerTourneyRuleset).Assembly));
-                return new object();
-            });
-        }
-        catch (Exception e)
-        {
-            Logging.LogError(e, "Failed to add tournament client resources");
-            return false;
-        }
-
-        try
-        {
-            // Sentry cannot be re-enabled through the public API (the DSN/options live inside
-            // osu.Game's SentryLogger), so this intentionally lasts until the game is restarted.
-            SentrySdk.Close();
-        }
-        catch (Exception e)
-        {
-            Logging.LogError(e, "Failed to disable Sentry for the tournament client");
-        }
+        closeSentryInBackground();
 
         try
         {
@@ -77,5 +57,34 @@ public static class TournamentLauncher
         game.ChildrenOfType<SettingsOverlay>().FirstOrDefault()?.Hide();
 
         return true;
+    }
+
+    /// <summary>
+    /// Closes the Sentry SDK on a background thread.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SentrySdk.Close"/> swaps the current hub for <c>DisabledHub</c> immediately, so
+    /// reporting stops as soon as this starts, but disposing the old hub flushes the queued events
+    /// and blocks for up to <c>SentryOptions.FlushTimeout</c> (2 seconds by default). That flush is
+    /// what froze the whole game for 1–2 s when it ran on the update thread, so it is moved to a
+    /// background thread here. Sentry cannot be re-enabled through the public API (the DSN/options
+    /// live inside osu.Game's SentryLogger), so this intentionally lasts until the game is restarted.
+    /// </remarks>
+    private static void closeSentryInBackground()
+    {
+        if (Interlocked.Exchange(ref sentry_close_started, 1) != 0)
+            return;
+
+        Task.Run(() =>
+        {
+            try
+            {
+                SentrySdk.Close();
+            }
+            catch (Exception e)
+            {
+                Logging.LogError(e, "Failed to disable Sentry for the tournament client");
+            }
+        });
     }
 }

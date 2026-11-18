@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using osu.Framework.Graphics;
 using osu.Framework.Input.Bindings;
+using osu.Framework.IO.Stores;
 using osu.Game.Beatmaps;
 using osu.Game.Overlays.Settings;
 using osu.Game.Rulesets.Difficulty;
@@ -19,7 +20,7 @@ namespace osu.Game.Rulesets.LazerTourney
     {
         public override string Description => "lazer!tourney";
 
-        public static string Version => "2026.1030.0";
+        public static string Version => "2026.1118.0";
 
         public override DrawableRuleset CreateDrawableRulesetWith(IBeatmap beatmap, IReadOnlyList<Mod> mods = null) =>
             new DrawableLazerTourneyRuleset(this, beatmap, mods);
@@ -39,6 +40,16 @@ namespace osu.Game.Rulesets.LazerTourney
         public override IEnumerable<KeyBinding> GetDefaultKeyBindings(int variant = 0) => [];
 
         public override Drawable CreateIcon() => new AutoSizeLazerTourneyIcon();
+
+        /// <summary>
+        /// Exposes the plugin assembly's embedded <c>Resources/</c> (currently the legacy mod
+        /// icon fallbacks) with the standard ruleset layout (<c>Textures/…</c> relative to the
+        /// returned store). The tournament subtree does not use the game-global store for
+        /// these; <see cref="Tournament.UI.Results.Legacy.LegacyRankingPanel"/> builds its own
+        /// texture store directly from the same namespace.
+        /// </summary>
+        public override IResourceStore<byte[]> CreateResourceStore() =>
+            new NamespacedResourceStore<byte[]>(new DllResourceStore(GetType().Assembly), @"Resources");
 
         public override RulesetSettingsSubsection? CreateSettings() => new LazerTourneySettingsSubsection(this);
 

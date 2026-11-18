@@ -64,6 +64,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament
 
         protected Task BracketLoadTask => bracketLoadTaskCompletionSource.Task;
 
+        protected TournamentStorage Storage => storage;
+
         private readonly TaskCompletionSource<bool> bracketLoadTaskCompletionSource = new TaskCompletionSource<bool>();
 
         /// <summary>

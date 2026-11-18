@@ -17,6 +17,7 @@ using osu.Game.Rulesets.LazerTourney.Tournament.Components.ChatCommands;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models;
 using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Screens.OnlinePlay.Match.Components;
+using osuTK.Graphics;
 
 namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 {
@@ -227,7 +228,40 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
             // not stable anymore
             // if (message.Content.StartsWith("!mp", StringComparison.Ordinal)) return null;
 
-            return new MatchMessage(message, ladderInfo);
+            return new MatchMessage(message, resolveUsernameColour(message));
+        }
+
+        /// <summary>
+        /// Resolves the colour used for a message sender's username.
+        /// </summary>
+        /// <remarks>
+        /// Called once when a chat line is created (including history loaded after joining a room),
+        /// so already displayed lines are deliberately not restyled when team or room state changes.
+        /// Team membership takes priority over room staff. System messages and senders with no
+        /// valid user ID keep <see cref="ChatLine"/>'s default colour.
+        /// </remarks>
+        private Color4? resolveUsernameColour(Message message)
+        {
+            int senderId = message.Sender?.OnlineID ?? 0;
+
+            if (senderId <= 0)
+                return null;
+
+            var match = ladderInfo.CurrentMatch.Value;
+
+            if (match?.Team1.Value?.Players.Any(u => u.OnlineID == senderId) == true)
+                return (Color4)TournamentColours.GetTeamNameColour(TeamColour.Red, ladderInfo);
+
+            if (match?.Team2.Value?.Players.Any(u => u.OnlineID == senderId) == true)
+                return (Color4)TournamentColours.GetTeamNameColour(TeamColour.Blue, ladderInfo);
+
+            var room = client.Room;
+
+            if (room != null && (room.Host?.UserID == senderId ||
+                                 room.Users.Any(u => u.UserID == senderId && u.Role == MultiplayerRoomUserRole.Referee)))
+                return TournamentColours.NAME_COLOUR_STAFF;
+
+            return TournamentColours.NAME_COLOUR_NEUTRAL;
         }
 
         protected override StandAloneDrawableChannel CreateDrawableChannel(Channel channel)
@@ -257,16 +291,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Components
 
         protected partial class MatchMessage : StandAloneMessage
         {
-            public MatchMessage(Message message, LadderInfo info)
+            public MatchMessage(Message message, Color4? usernameColour)
                 : base(message)
             {
-                if (info.CurrentMatch.Value is TournamentMatch match)
-                {
-                    if (match.Team1.Value?.Players.Any(u => u.OnlineID == Message.Sender.OnlineID) == true)
-                        UsernameColour = TournamentColours.GetTeamNameColour(TeamColour.Red, info);
-                    else if (match.Team2.Value?.Players.Any(u => u.OnlineID == Message.Sender.OnlineID) == true)
-                        UsernameColour = TournamentColours.GetTeamNameColour(TeamColour.Blue, info);
-                }
+                if (usernameColour.HasValue)
+                    UsernameColour = usernameColour.Value;
             }
         }
 

@@ -26,6 +26,7 @@ using osu.Game.Rulesets.LazerTourney.Tournament.Online;
 using osu.Game.Users.Drawables;
 using osu.Game.Rulesets.LazerTourney.Graphics;
 using osu.Game.Rulesets.LazerTourney.Tournament.Components;
+using osu.Game.Rulesets.LazerTourney.Tournament.IO;
 using osu.Game.Rulesets.LazerTourney.Tournament.Models.ModMultiplier;
 using osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors.Components;
 using osu.Game.Rulesets.Mods;
@@ -41,11 +42,19 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
         private const float base_icon_scale = 4f;
         private const float icon_box_size = 110f;
 
+        private const float user_card_width = 300;
+        private const float user_card_height = 150;
+        private const float user_card_spacing = 10;
+        private const int users_per_row = 4;
+
         private LazerTourneyIcon bigIcon = null!;
         private float iconScale = base_icon_scale;
 
         [Resolved]
         private UserLookupCache userLookupCache { get; set; } = null!;
+
+        [Resolved]
+        private TournamentStorage tournamentStorage { get; set; } = null!;
 
         [Resolved(canBeNull: true)]
         private INotificationOverlay? notifications { get; set; }
@@ -75,6 +84,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
             (30732590, "g0v0 dev (V2 results)"),
             (30656658, "g0v0 dev (V2 results)"),
             (5382216, "Torii dev (Legacy results)"),
+            (13999223, "HSC host & design (HSC results)"),
+            (14721101, "HSC coder (HSC results)"),
         ];
 
         [BackgroundDependencyLoader]
@@ -258,6 +269,11 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
                                 bigIcon.Rotation += 20;
                             },
                         },
+                        new OsuCheckbox
+                        {
+                            LabelText = "Check for updates on startup",
+                            Current = tournamentStorage.CheckForUpdatesOnStartup,
+                        },
                         new TourneyButton
                         {
                             RelativeSizeAxes = Axes.X,
@@ -353,10 +369,10 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
 
         private static FillFlowContainer userFlow() => new FillFlowContainer
         {
-            RelativeSizeAxes = Axes.X,
+            Width = users_per_row * user_card_width + (users_per_row - 1) * user_card_spacing,
             AutoSizeAxes = Axes.Y,
-            Direction = FillDirection.Horizontal,
-            Spacing = new Vector2(10),
+            Direction = FillDirection.Full,
+            Spacing = new Vector2(user_card_spacing),
         };
 
         private static OsuSpriteText sectionHeader(string text) => new OsuSpriteText
@@ -371,18 +387,40 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
 
         private async void checkForUpdates()
         {
-            GitHubRelease? release = null;
-
             releaseRequest?.Abort();
-            releaseRequest = new GetGitHubRelease();
-            releaseRequest.Finished += () => release = releaseRequest.ResponseObject ?? null;
-            await releaseRequest.AwaitRequest();
 
-            if (release is null || string.IsNullOrEmpty(release.tagName))
-                return;
+            var request = new GetGitHubRelease();
+            releaseRequest = request;
+
+            GitHubRelease? release = null;
+            string? error = null;
+
+            request.Finished += () => release = request.ResponseObject ?? null;
+
+            try
+            {
+                await request.AwaitRequest();
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+            }
 
             Schedule(() =>
             {
+                // A newer check superseded this one (aborting it above surfaces as an error).
+                if (releaseRequest != request)
+                    return;
+
+                if (error != null)
+                {
+                    notifications?.Post(new SimpleNotification { Text = $"Update check failed: {error}" });
+                    return;
+                }
+
+                if (release is null || string.IsNullOrEmpty(release.tagName))
+                    return;
+
                 if (release.tagName != LazerTourneyRuleset.Version)
                     notifications?.Post(new UpdateAvailableNotification(release));
                 else
@@ -477,8 +515,8 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.About
         {
             public UserCard(APIUser user, string note)
             {
-                Width = 250;
-                Height = 150;
+                Width = user_card_width;
+                Height = user_card_height;
                 Masking = true;
                 CornerRadius = 8;
 
