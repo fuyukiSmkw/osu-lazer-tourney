@@ -31,7 +31,7 @@ namespace osu.Game.Rulesets.LazerTourney.Tests.Editors
 
         private TeamEditorScreen.TeamRow[] rows => list.ChildrenOfType<TeamEditorScreen.TeamRow>().ToArray();
 
-        private ExpandedScrollContainer innerScroll => list.ChildrenOfType<ExpandedScrollContainer>().Single();
+        private ExpandedScrollContainer innerScroll => list.ChildrenOfType<ExpandedScrollContainer>().First();
 
         private Vector2 dragStart;
 

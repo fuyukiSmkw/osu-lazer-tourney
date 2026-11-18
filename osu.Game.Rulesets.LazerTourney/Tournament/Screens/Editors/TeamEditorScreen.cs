@@ -241,128 +241,130 @@ namespace osu.Game.Rulesets.LazerTourney.Tournament.Screens.Editors
                 }, true);
             }
 
-            public partial class PlayerEditor : CompositeDrawable
+            public partial class PlayerEditor : ExpandedRearrangeableListContainer<TournamentUser>
             {
                 private readonly TournamentTeam team;
-                private readonly FillFlowContainer flow;
 
                 public PlayerEditor(TournamentTeam team)
                 {
                     this.team = team;
 
-                    RelativeSizeAxes = Axes.X;
-                    AutoSizeAxes = Axes.Y;
+                    // Dragging players around updates the team model directly (and keeps external model changes in sync).
+                    Items.BindTarget = team.Players;
+                }
 
-                    InternalChild = flow = new FillFlowContainer
+                public void CreateNew() => team.Players.Add(new TournamentUser());
+
+                protected override OsuRearrangeableListItem<TournamentUser> CreateOsuDrawable(TournamentUser item) => new PlayerRow(team, item);
+
+                // Matches the spacing the default editor flow uses between rows.
+                protected override FillFlowContainer<RearrangeableListItem<TournamentUser>> CreateListFillFlowContainer()
+                    => base.CreateListFillFlowContainer().With(list =>
                     {
-                        RelativeSizeAxes = Axes.X,
-                        AutoSizeAxes = Axes.Y,
-                        Direction = FillDirection.Vertical,
-                        Padding = new MarginPadding(5),
-                        Spacing = new Vector2(5),
-                        ChildrenEnumerable = team.Players.Select(p => new PlayerRow(team, p))
-                    };
-                }
+                        list.Padding = new MarginPadding(5);
+                        list.Spacing = new Vector2(0, 5);
+                    });
 
-                public void CreateNew()
+                public partial class PlayerRow : OsuRearrangeableListItem<TournamentUser>
                 {
-                    var player = new TournamentUser();
-                    team.Players.Add(player);
-                    flow.Add(new PlayerRow(team, player));
-                }
-
-                public partial class PlayerRow : CompositeDrawable
-                {
-                    private readonly TournamentUser user;
+                    private readonly TournamentTeam team;
 
                     [Resolved]
-                    private TournamentGameBase game { get; set; } = null!;
+                    private TournamentGameBase? game { get; set; }
 
                     private readonly Bindable<int?> playerId = new Bindable<int?>();
 
-                    private readonly Container userPanelContainer;
+                    private Container userPanelContainer = null!;
 
                     public PlayerRow(TournamentTeam team, TournamentUser user)
+                        : base(user)
                     {
-                        this.user = user;
-
-                        RelativeSizeAxes = Axes.X;
-                        AutoSizeAxes = Axes.Y;
+                        this.team = team;
 
                         Masking = true;
                         CornerRadius = 10;
-
-                        InternalChildren = new Drawable[]
-                        {
-                            new Box
-                            {
-                                Colour = OsuColour.Gray(0.2f),
-                                RelativeSizeAxes = Axes.Both,
-                            },
-                            new FillFlowContainer
-                            {
-                                Margin = new MarginPadding(5),
-                                Padding = new MarginPadding { Right = 60 },
-                                Spacing = new Vector2(5),
-                                Direction = FillDirection.Horizontal,
-                                RelativeSizeAxes = Axes.X,
-                                AutoSizeAxes = Axes.Y,
-                                Children = new Drawable[]
-                                {
-                                    new SettingsNumberBox
-                                    {
-                                        LabelText = "User ID",
-                                        RelativeSizeAxes = Axes.None,
-                                        Width = 200,
-                                        Current = playerId,
-                                    },
-                                    userPanelContainer = new Container
-                                    {
-                                        Width = 400,
-                                        RelativeSizeAxes = Axes.Y,
-                                    },
-                                }
-                            },
-                            new DangerousSettingsButton
-                            {
-                                Anchor = Anchor.CentreRight,
-                                Origin = Anchor.CentreRight,
-                                RelativeSizeAxes = Axes.None,
-                                Width = 150,
-                                Text = "Delete Player",
-                                Action = () =>
-                                {
-                                    Expire();
-                                    team.Players.Remove(user);
-                                },
-                            }
-                        };
                     }
 
                     [BackgroundDependencyLoader]
                     private void load()
                     {
-                        playerId.Value = user.OnlineID;
+                        // The item draws the row background (so it also covers the drag handle); added after the base
+                        // dependency loader so it is not overwritten by the base's children setup.
+                        AddInternal(new Box
+                        {
+                            Colour = OsuColour.Gray(0.2f),
+                            RelativeSizeAxes = Axes.Both,
+                            Depth = float.MaxValue,
+                        });
+
+                        playerId.Value = Model.OnlineID;
                         playerId.BindValueChanged(id =>
                         {
-                            user.OnlineID = id.NewValue ?? 0;
+                            Model.OnlineID = id.NewValue ?? 0;
 
                             if (id.NewValue != id.OldValue)
-                                user.Username = string.Empty;
+                                Model.Username = string.Empty;
 
-                            if (!string.IsNullOrEmpty(user.Username))
+                            if (!string.IsNullOrEmpty(Model.Username))
                             {
                                 updatePanel();
                                 return;
                             }
 
-                            game.PopulatePlayer(user, updatePanel, updatePanel);
+                            // Tests host player rows without a tournament game to resolve.
+                            game?.PopulatePlayer(Model, updatePanel, updatePanel);
                         }, true);
+                    }
+
+                    protected override Drawable CreateContent()
+                    {
+                        return new Container
+                        {
+                            RelativeSizeAxes = Axes.X,
+                            AutoSizeAxes = Axes.Y,
+                            Children = new Drawable[]
+                            {
+                                new FillFlowContainer
+                                {
+                                    Margin = new MarginPadding(5),
+                                    Padding = new MarginPadding { Right = 60 },
+                                    Spacing = new Vector2(5),
+                                    Direction = FillDirection.Horizontal,
+                                    RelativeSizeAxes = Axes.X,
+                                    AutoSizeAxes = Axes.Y,
+                                    Children = new Drawable[]
+                                    {
+                                        new SettingsNumberBox
+                                        {
+                                            LabelText = "User ID",
+                                            RelativeSizeAxes = Axes.None,
+                                            Width = 200,
+                                            Current = playerId,
+                                        },
+                                        userPanelContainer = new Container
+                                        {
+                                            Width = 400,
+                                            RelativeSizeAxes = Axes.Y,
+                                        },
+                                    }
+                                },
+                                new DangerousSettingsButton
+                                {
+                                    Anchor = Anchor.CentreRight,
+                                    Origin = Anchor.CentreRight,
+                                    RelativeSizeAxes = Axes.None,
+                                    Width = 150,
+                                    Text = "Delete Player",
+                                    // The list container removes (and disposes) the row once the model entry is gone.
+                                    Action = () => team.Players.Remove(Model),
+                                }
+                            }
+                        };
                     }
 
                     private void updatePanel() => Scheduler.AddOnce(() =>
                     {
-                        userPanelContainer.Child = new UserListPanel(user.ToAPIUser())
+                        userPanelContainer.Child = new UserListPanel(Model.ToAPIUser())
                         {
                             Anchor = Anchor.BottomLeft,
                             Origin = Anchor.BottomLeft,
